@@ -18,7 +18,7 @@ Modern TUI (Text User Interface) package manager for Arch Linux. A professional,
 
 ```bash
 # Clone or navigate to the project directory
-cd syu
+cd pmgr
 
 # Build the release binary
 cargo build --release
