@@ -1,6 +1,6 @@
 use anyhow::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
+    event::{self, poll, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -14,8 +14,12 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
     Frame, Terminal,
 };
+use std::collections::HashMap;
 use std::io;
 use std::process::Command;
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::thread;
+use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PreviewLayout {
@@ -42,8 +46,12 @@ struct App {
     multi: bool,
     preview_cmd: Option<String>,
     preview_content: String,
+    preview_cache: HashMap<String, String>, // Cache for loaded previews
+    preview_tx: Option<Sender<(String, String)>>, // Send preview requests
+    preview_rx: Option<Receiver<(String, String)>>, // Receive preview results
     layout: PreviewLayout,
     matcher: SkimMatcherV2,
+    current_preview_item: Option<String>, // Track current item being previewed
 }
 
 impl App {
@@ -58,6 +66,14 @@ impl App {
             list_state.select(Some(0));
         }
 
+        // Create channels for async preview loading
+        let (preview_tx, preview_rx) = if preview_cmd.is_some() {
+            let (tx, rx) = mpsc::channel();
+            (Some(tx), Some(rx))
+        } else {
+            (None, None)
+        };
+
         let mut app = Self {
             items,
             filtered_items,
@@ -67,11 +83,15 @@ impl App {
             multi,
             preview_cmd,
             preview_content: String::new(),
+            preview_cache: HashMap::new(),
+            preview_tx,
+            preview_rx,
             layout: PreviewLayout::Vertical,
             matcher: SkimMatcherV2::default(),
+            current_preview_item: None,
         };
 
-        app.update_preview();
+        app.request_preview();
         app
     }
 
@@ -104,7 +124,7 @@ impl App {
             self.list_state.select(None);
         }
 
-        self.update_preview();
+        self.request_preview();
     }
 
     fn next(&mut self) {
@@ -123,7 +143,7 @@ impl App {
             None => 0,
         };
         self.list_state.select(Some(i));
-        self.update_preview();
+        self.request_preview();
     }
 
     fn previous(&mut self) {
@@ -142,7 +162,7 @@ impl App {
             None => 0,
         };
         self.list_state.select(Some(i));
-        self.update_preview();
+        self.request_preview();
     }
 
     fn toggle_select(&mut self) {
@@ -174,23 +194,62 @@ impl App {
         }
     }
 
-    fn update_preview(&mut self) {
+    fn request_preview(&mut self) {
         if let Some(ref cmd) = self.preview_cmd {
             if let Some(selected) = self.list_state.selected() {
                 if let Some((item, _)) = self.filtered_items.get(selected) {
-                    // Replace {} with the selected item
-                    let preview_cmd = cmd.replace("{}", item);
-
-                    // Execute the command
-                    if let Ok(output) = Command::new("sh")
-                        .arg("-c")
-                        .arg(&preview_cmd)
-                        .output()
-                    {
-                        self.preview_content = String::from_utf8_lossy(&output.stdout).to_string();
-                    } else {
-                        self.preview_content = "Failed to load preview".to_string();
+                    // Check if already in cache
+                    if let Some(cached) = self.preview_cache.get(item) {
+                        self.preview_content = cached.clone();
+                        self.current_preview_item = Some(item.clone());
+                        return;
                     }
+
+                    // Check if already loading this item
+                    if self.current_preview_item.as_ref() == Some(item) {
+                        return;
+                    }
+
+                    self.current_preview_item = Some(item.clone());
+                    self.preview_content = "Loading preview...".to_string();
+
+                    // Spawn thread to load preview
+                    if let Some(ref tx) = self.preview_tx {
+                        let item_clone = item.clone();
+                        let cmd_clone = cmd.clone();
+                        let tx_clone = tx.clone();
+
+                        thread::spawn(move || {
+                            let preview_cmd = cmd_clone.replace("{}", &item_clone);
+
+                            let content = if let Ok(output) = Command::new("sh")
+                                .arg("-c")
+                                .arg(&preview_cmd)
+                                .output()
+                            {
+                                String::from_utf8_lossy(&output.stdout).to_string()
+                            } else {
+                                "Failed to load preview".to_string()
+                            };
+
+                            let _ = tx_clone.send((item_clone, content));
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    fn check_preview_updates(&mut self) {
+        if let Some(ref rx) = self.preview_rx {
+            // Try to receive without blocking
+            while let Ok((item, content)) = rx.try_recv() {
+                // Cache the result
+                self.preview_cache.insert(item.clone(), content.clone());
+
+                // Update display if this is still the current item
+                if self.current_preview_item.as_ref() == Some(&item) {
+                    self.preview_content = content;
                 }
             }
         }
@@ -309,46 +368,52 @@ fn run_app<B: ratatui::backend::Backend>(
     prompt: &str,
 ) -> Result<Vec<String>> {
     loop {
+        // Check for preview updates from background threads
+        app.check_preview_updates();
+
         terminal.draw(|f| ui(f, &mut app, prompt))?;
 
-        if let Event::Key(key) = event::read()? {
-            match (key.code, key.modifiers) {
-                // Exit on ESC
-                (KeyCode::Esc, _) => {
-                    return Ok(Vec::new());
+        // Use poll with timeout to allow periodic UI updates
+        if poll(Duration::from_millis(100))? {
+            if let Event::Key(key) = event::read()? {
+                match (key.code, key.modifiers) {
+                    // Exit on ESC
+                    (KeyCode::Esc, _) => {
+                        return Ok(Vec::new());
+                    }
+                    // Confirm on Enter
+                    (KeyCode::Enter, _) => {
+                        return Ok(app.get_selected_items());
+                    }
+                    // Navigation
+                    (KeyCode::Down, _) | (KeyCode::Char('j'), KeyModifiers::NONE) => {
+                        app.next();
+                    }
+                    (KeyCode::Up, _) | (KeyCode::Char('k'), KeyModifiers::NONE) => {
+                        app.previous();
+                    }
+                    // Multi-select with Tab
+                    (KeyCode::Tab, _) => {
+                        app.toggle_select();
+                    }
+                    // Layout switching
+                    (KeyCode::Char('o'), KeyModifiers::ALT) => {
+                        app.layout.toggle_to_horizontal();
+                    }
+                    (KeyCode::Char('v'), KeyModifiers::ALT) => {
+                        app.layout.toggle_to_vertical();
+                    }
+                    // Search input
+                    (KeyCode::Char(c), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+                        app.search_query.push(c);
+                        app.filter_items();
+                    }
+                    (KeyCode::Backspace, _) => {
+                        app.search_query.pop();
+                        app.filter_items();
+                    }
+                    _ => {}
                 }
-                // Confirm on Enter
-                (KeyCode::Enter, _) => {
-                    return Ok(app.get_selected_items());
-                }
-                // Navigation
-                (KeyCode::Down, _) | (KeyCode::Char('j'), KeyModifiers::NONE) => {
-                    app.next();
-                }
-                (KeyCode::Up, _) | (KeyCode::Char('k'), KeyModifiers::NONE) => {
-                    app.previous();
-                }
-                // Multi-select with Tab
-                (KeyCode::Tab, _) => {
-                    app.toggle_select();
-                }
-                // Layout switching
-                (KeyCode::Char('o'), KeyModifiers::ALT) => {
-                    app.layout.toggle_to_horizontal();
-                }
-                (KeyCode::Char('v'), KeyModifiers::ALT) => {
-                    app.layout.toggle_to_vertical();
-                }
-                // Search input
-                (KeyCode::Char(c), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
-                    app.search_query.push(c);
-                    app.filter_items();
-                }
-                (KeyCode::Backspace, _) => {
-                    app.search_query.pop();
-                    app.filter_items();
-                }
-                _ => {}
             }
         }
     }
