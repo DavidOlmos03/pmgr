@@ -24,6 +24,7 @@ pub struct App {
     pub current_preview_item: Option<String>, // Track current item being previewed
     pub update_window: SystemUpdateWindow,
     pub help_visible: bool, // Flag to show help screen
+    pub help_scroll: u16, // Vertical scroll position for help window
 }
 
 impl App {
@@ -63,6 +64,7 @@ impl App {
             current_preview_item: None,
             update_window: SystemUpdateWindow::new(),
             help_visible: false,
+            help_scroll: 0,
         };
 
         app.request_preview();

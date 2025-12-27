@@ -2,8 +2,9 @@ use super::app::App;
 use super::help_window;
 use super::types::PreviewLayout;
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
+    text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
     Frame,
 };
@@ -110,7 +111,7 @@ pub fn ui(f: &mut Frame, app: &mut App, prompt: &str) {
 
     // Help screen overlay
     if app.help_visible {
-        render_help_window(f);
+        render_help_window(f, app);
     }
 }
 
@@ -221,13 +222,20 @@ fn render_update_window(f: &mut Frame, app: &mut App) {
     f.render_widget(update_content, overlay_area);
 }
 
-fn render_help_window(f: &mut Frame) {
-    // Create a centered overlay area (90% width, 90% height)
+fn render_help_window(f: &mut Frame, app: &mut App) {
+    // Create a centered overlay area - responsive sizing
     let area = f.area();
-    let overlay_width = (area.width as f32 * 0.9) as u16;
-    let overlay_height = (area.height as f32 * 0.9) as u16;
-    let overlay_x = (area.width - overlay_width) / 2;
-    let overlay_y = (area.height - overlay_height) / 2;
+
+    // Calculate responsive dimensions (min 80 cols for two columns)
+    let min_width = 80u16;
+    let max_width_percent = 0.90;
+    let overlay_width = ((area.width as f32 * max_width_percent) as u16).max(min_width).min(area.width - 4);
+
+    // Height: 90% of screen or max available
+    let overlay_height = ((area.height as f32 * 0.90) as u16).min(area.height - 4);
+
+    let overlay_x = (area.width.saturating_sub(overlay_width)) / 2;
+    let overlay_y = (area.height.saturating_sub(overlay_height)) / 2;
 
     let overlay_area = Rect {
         x: overlay_x,
@@ -241,15 +249,158 @@ fn render_help_window(f: &mut Frame) {
 
     let help_block = Block::default()
         .borders(Borders::ALL)
-        .title(" Help - Press '?' or ESC to close ")
+        .title(" Help - Press '?' or ESC to close | ↑/↓ to scroll ")
         .style(Style::default().fg(Color::Cyan).bg(Color::Black));
 
-    let help_text = help_window::get_help_text();
+    // Split into title area and content area
+    let inner_area = help_block.inner(overlay_area);
 
-    let help_content = Paragraph::new(help_text)
-        .block(help_block)
-        .wrap(Wrap { trim: false })
+    let main_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(5), // Title
+            Constraint::Min(0),    // Content
+        ])
+        .split(inner_area);
+
+    // Render block first
+    f.render_widget(help_block, overlay_area);
+
+    // Title - centered
+    let title_lines = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("PMGR - Package Manager", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        ]),
+        Line::from(vec![
+            Span::styled("Keyboard Shortcuts", Style::default().fg(Color::Cyan))
+        ]),
+        Line::from(""),
+    ];
+
+    let title_widget = Paragraph::new(title_lines)
+        .alignment(Alignment::Center)
         .style(Style::default().fg(Color::White).bg(Color::Black));
 
-    f.render_widget(help_content, overlay_area);
+    f.render_widget(title_widget, main_chunks[0]);
+
+    // Determine number of columns based on width
+    let use_two_columns = overlay_width >= 80;
+
+    if use_two_columns {
+        // Two column layout
+        let columns = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(50),
+                Constraint::Percentage(50),
+            ])
+            .split(main_chunks[1]);
+
+        // Left column content
+        let left_content = vec![
+            Line::from(vec![
+                Span::styled("NAVIGATION", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            ]),
+            Line::from("  ↑ / k        Move up in list"),
+            Line::from("  ↓ / j        Move down in list"),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("SELECTION & ACTIONS", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            ]),
+            Line::from("  TAB          Toggle selection"),
+            Line::from("  ENTER        Confirm selection"),
+            Line::from("  ESC          Cancel and exit"),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("SEARCH", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            ]),
+            Line::from("  Type         Filter packages"),
+            Line::from("  Backspace    Delete character"),
+            Line::from(""),
+        ];
+
+        // Right column content
+        let right_content = vec![
+            Line::from(vec![
+                Span::styled("LAYOUT", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            ]),
+            Line::from("  Alt+O        Horizontal layout"),
+            Line::from("  Alt+V        Vertical layout"),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("SYSTEM", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            ]),
+            Line::from("  Ctrl+U       Update system"),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("HELP", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            ]),
+            Line::from("  ?            Show/hide help"),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("TIPS", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
+            ]),
+            Line::from("• Fuzzy search available"),
+            Line::from("• Multi-select with TAB"),
+            Line::from("• Updates auto-close"),
+            Line::from("• Alt+X closes errors"),
+        ];
+
+        let left_para = Paragraph::new(left_content)
+            .scroll((app.help_scroll, 0))
+            .style(Style::default().fg(Color::White).bg(Color::Black));
+
+        let right_para = Paragraph::new(right_content)
+            .scroll((app.help_scroll, 0))
+            .style(Style::default().fg(Color::White).bg(Color::Black));
+
+        f.render_widget(left_para, columns[0]);
+        f.render_widget(right_para, columns[1]);
+    } else {
+        // Single column layout for narrow screens
+        let content = vec![
+            Line::from(vec![
+                Span::styled("NAVIGATION", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            ]),
+            Line::from("  ↑ / k        Move up in list"),
+            Line::from("  ↓ / j        Move down in list"),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("SELECTION", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            ]),
+            Line::from("  TAB          Toggle selection"),
+            Line::from("  ENTER        Confirm"),
+            Line::from("  ESC          Cancel"),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("SEARCH", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            ]),
+            Line::from("  Type         Filter"),
+            Line::from("  Backspace    Delete"),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("LAYOUT", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            ]),
+            Line::from("  Alt+O        Horizontal"),
+            Line::from("  Alt+V        Vertical"),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("SYSTEM", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            ]),
+            Line::from("  Ctrl+U       Update"),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("HELP", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            ]),
+            Line::from("  ?            Toggle help"),
+            Line::from(""),
+        ];
+
+        let para = Paragraph::new(content)
+            .scroll((app.help_scroll, 0))
+            .style(Style::default().fg(Color::White).bg(Color::Black));
+
+        f.render_widget(para, main_chunks[1]);
+    }
 }

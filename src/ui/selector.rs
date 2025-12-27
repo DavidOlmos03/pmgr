@@ -58,6 +58,15 @@ fn run_app<B: ratatui::backend::Backend>(
                         (KeyCode::Char('?'), KeyModifiers::NONE | KeyModifiers::SHIFT)
                         | (KeyCode::Esc, _) => {
                             app.help_visible = false;
+                            app.help_scroll = 0; // Reset scroll when closing
+                        }
+                        // Scroll down
+                        (KeyCode::Down, _) | (KeyCode::Char('j'), KeyModifiers::NONE) => {
+                            app.help_scroll = app.help_scroll.saturating_add(1);
+                        }
+                        // Scroll up
+                        (KeyCode::Up, _) | (KeyCode::Char('k'), KeyModifiers::NONE) => {
+                            app.help_scroll = app.help_scroll.saturating_sub(1);
                         }
                         _ => {} // Ignore other keys while help is visible
                     }
@@ -68,6 +77,7 @@ fn run_app<B: ratatui::backend::Backend>(
                     // Show help on '?'
                     (KeyCode::Char('?'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
                         app.help_visible = true;
+                        app.help_scroll = 0; // Reset scroll when opening
                     }
                     // Exit on ESC
                     (KeyCode::Esc, _) => {
