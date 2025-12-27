@@ -654,102 +654,211 @@ pub fn render_home_view(f: &mut Frame, area: Rect, home_state: &super::home_stat
     let inner_area = block.inner(area);
     f.render_widget(block, area);
 
-    let mut content_lines = vec![];
+    // Split into header and sections
+    let main_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(10), // Title + separator
+            Constraint::Min(0),     // Sections
+        ])
+        .split(inner_area);
 
-    // Title section
-    content_lines.push(Line::from(""));
-    content_lines.push(Line::from(vec![
-        Span::styled(
-            "Modern TUI for Arch Linux",
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
-        )
-    ]));
-    content_lines.push(Line::from(""));
-    content_lines.push(Line::from("━".repeat(inner_area.width as usize)));
-    content_lines.push(Line::from(""));
+    // Render title section (ASCII art + subtitle)
+    let mut title_lines = vec![];
+    title_lines.push(Line::from(Span::styled(
+        "  ______   _____    ___________",
+        Style::default().fg(Color::Rgb(210, 215, 255)),
+    )));
+    title_lines.push(Line::from(Span::styled(
+        "   \\____ \\ /     \\  / ___\\_  __ \\",
+        Style::default().fg(Color::Rgb(200, 205, 245)),
+    )));
+    title_lines.push(Line::from(Span::styled(
+        "   |  |_> >  Y Y  \\/ /_/  >  | \\/",
+        Style::default().fg(Color::Rgb(190, 195, 235)),
+    )));
+    title_lines.push(Line::from(Span::styled(
+        " |   __/|__|_|  /\\___  /|__| ",
+        Style::default().fg(Color::Rgb(175, 180, 220)),
+    )));
+    title_lines.push(Line::from(Span::styled(
+        "|__|         \\//_____/    ",
+        Style::default().fg(Color::Rgb(165, 170, 210)),
+    )));
+    title_lines.push(Line::from(""));
+    title_lines.push(Line::from(Span::styled(
+        "Modern TUI for Arch Linux",
+        Style::default()
+            .fg(Color::DarkGray)
+            .add_modifier(Modifier::ITALIC),
+    )));
+    title_lines.push(Line::from(""));
+    title_lines.push(Line::from("━".repeat(inner_area.width as usize)));
 
-    // System Information
-    content_lines.push(Line::from(vec![
-        Span::styled(" System Information", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+    let title_widget = Paragraph::new(title_lines)
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(Color::White).bg(Color::Black));
+
+    f.render_widget(title_widget, main_chunks[0]);
+
+    // Determine number of columns based on width
+    let width = inner_area.width;
+    let num_columns = if width >= 120 {
+        3 // 3 columns for wide screens
+    } else if width >= 80 {
+        2 // 2 columns for medium screens
+    } else {
+        1 // 1 column for narrow screens
+    };
+
+    // Create System Information section
+    let mut sys_info_lines = vec![];
+    sys_info_lines.push(Line::from(vec![
+        Span::styled("System Information", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
     ]));
+    sys_info_lines.push(Line::from(""));
 
     if let Some(ref stats) = home_state.stats {
-        content_lines.push(Line::from(vec![
-            Span::raw("nstalled packages: "),
+        sys_info_lines.push(Line::from(vec![
+            Span::raw(" Installed: "),
             Span::styled(
                 stats.installed_count.to_string(),
                 Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
             )
         ]));
-        content_lines.push(Line::from(vec![
-            Span::raw("vailable packages: "),
+        sys_info_lines.push(Line::from(vec![
+            Span::raw(" Available: "),
             Span::styled(
                 stats.available_count.to_string(),
                 Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
             )
         ]));
-        content_lines.push(Line::from(vec![
-            Span::raw("System updates: "),
+        sys_info_lines.push(Line::from(vec![
+            Span::raw(" Updates: "),
             Span::styled(
-                format!("{} available", stats.updates_available),
+                format!("{}", stats.updates_available),
                 Style::default().fg(if stats.updates_available > 0 { Color::Red } else { Color::Green })
                     .add_modifier(Modifier::BOLD)
             )
-        ]));  
-    } else {  
-        content_lines.push(Line::from("  Loading..."));
+        ]));
+    } else {
+        sys_info_lines.push(Line::from(" Loading..."));
     }
-   
-    content_lines.push(Line::from(""));  
-   
-    // Quick Actions   
-    content_lines.push(Line::from(vec![  
-        Span::styled(" Quick Actions", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
-    ]));   
-    content_lines.push(Line::from(vec![  
-        Span::styled("[1]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::raw(" Browse & Install packages")
-    ]));  
-    content_lines.push(Line::from(vec![  
-        Span::styled("[2]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::raw(" Remove packages") 
+
+    // Create Quick Actions section
+    let mut quick_actions_lines = vec![];
+    quick_actions_lines.push(Line::from(vec![
+        Span::styled("Quick Actions", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
     ]));
-    content_lines.push(Line::from(vec![  
-        Span::styled("[3]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::raw(" List installed packages")
+    quick_actions_lines.push(Line::from(""));
+    quick_actions_lines.push(Line::from(vec![
+        Span::styled(" [1]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::raw(" Install packages")
     ]));
-    content_lines.push(Line::from(vec![  
-        Span::styled("[Ctrl+U]", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-        Span::raw(" Update system")
-    ]));   
-    content_lines.push(Line::from(""));  
-   
-    // Keyboard Shortcuts   
-    content_lines.push(Line::from(vec![  
-        Span::styled(" Keyboard Shortcuts", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
-    ]));   
-    content_lines.push(Line::from(vec![  
-        Span::styled("1-4", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::raw(": Switch tabs")  
-    ]));  
-    content_lines.push(Line::from(vec![  
-        Span::styled("?", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::raw(": Show help") 
-    ])); 
-    content_lines.push(Line::from(vec![  
-        Span::styled("Ctrl+R", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+    quick_actions_lines.push(Line::from(vec![
+        Span::styled(" [2]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::raw(" Remove packages")
+    ]));
+    quick_actions_lines.push(Line::from(vec![
+        Span::styled(" [3]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::raw(" List packages")
+    ]));
+    quick_actions_lines.push(Line::from(vec![
+        Span::styled(" [Ctrl+U]", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+        Span::raw(" System update")
+    ]));
+
+    // Create Keyboard Shortcuts section
+    let mut shortcuts_lines = vec![];
+    shortcuts_lines.push(Line::from(vec![
+        Span::styled("Keyboard Shortcuts", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+    ]));
+    shortcuts_lines.push(Line::from(""));
+    shortcuts_lines.push(Line::from(vec![
+        Span::styled(" 1-4", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::raw(": Switch tabs")
+    ]));
+    shortcuts_lines.push(Line::from(vec![
+        Span::styled(" ?", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::raw(": Show help")
+    ]));
+    shortcuts_lines.push(Line::from(vec![
+        Span::styled(" Ctrl+R", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         Span::raw(": Refresh data")
     ]));
-    content_lines.push(Line::from(vec![
-        Span::raw("  └─ "),
-        Span::styled("ESC", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+    shortcuts_lines.push(Line::from(vec![
+        Span::styled(" ESC", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
         Span::raw(": Exit")
     ]));
 
-    let content = Paragraph::new(content_lines)
-        .alignment(Alignment::Center)
-        .scroll((home_state.scroll_position, 0))
-        .style(Style::default().fg(Color::White).bg(Color::Black));
+    // Render sections based on number of columns
+    if num_columns == 3 {
+        // 3 columns layout
+        let columns = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(33),
+                Constraint::Percentage(33),
+                Constraint::Percentage(34),
+            ])
+            .split(main_chunks[1]);
 
-    f.render_widget(content, inner_area);
+        let sys_info = Paragraph::new(sys_info_lines)
+            .alignment(Alignment::Left)
+            .style(Style::default().fg(Color::White).bg(Color::Black));
+
+        let quick_actions = Paragraph::new(quick_actions_lines)
+            .alignment(Alignment::Left)
+            .style(Style::default().fg(Color::White).bg(Color::Black));
+
+        let shortcuts = Paragraph::new(shortcuts_lines)
+            .alignment(Alignment::Left)
+            .style(Style::default().fg(Color::White).bg(Color::Black));
+
+        f.render_widget(sys_info, columns[0]);
+        f.render_widget(quick_actions, columns[1]);
+        f.render_widget(shortcuts, columns[2]);
+    } else if num_columns == 2 {
+        // 2 columns layout
+        let columns = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(50),
+                Constraint::Percentage(50),
+            ])
+            .split(main_chunks[1]);
+
+        // Left column: System Info
+        let sys_info = Paragraph::new(sys_info_lines)
+            .alignment(Alignment::Left)
+            .style(Style::default().fg(Color::White).bg(Color::Black));
+
+        // Right column: Quick Actions + Shortcuts
+        let mut right_column_lines = vec![];
+        right_column_lines.extend(quick_actions_lines);
+        right_column_lines.push(Line::from(""));
+        right_column_lines.extend(shortcuts_lines);
+
+        let right_column = Paragraph::new(right_column_lines)
+            .alignment(Alignment::Left)
+            .style(Style::default().fg(Color::White).bg(Color::Black));
+
+        f.render_widget(sys_info, columns[0]);
+        f.render_widget(right_column, columns[1]);
+    } else {
+        // 1 column layout
+        let mut all_lines = vec![];
+        all_lines.extend(sys_info_lines);
+        all_lines.push(Line::from(""));
+        all_lines.extend(quick_actions_lines);
+        all_lines.push(Line::from(""));
+        all_lines.extend(shortcuts_lines);
+
+        let single_column = Paragraph::new(all_lines)
+            .alignment(Alignment::Center)
+            .scroll((home_state.scroll_position, 0))
+            .style(Style::default().fg(Color::White).bg(Color::Black));
+
+        f.render_widget(single_column, main_chunks[1]);
+    }
 }
