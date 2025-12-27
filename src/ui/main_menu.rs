@@ -355,76 +355,6 @@ impl MainMenu {
                         }
                     }
 
-                    // Check if confirmation dialog was confirmed
-                    let mut pending_operation: Option<(ActionType, Vec<String>)> = None;
-                    if let ViewState::Install(app) | ViewState::Remove(app) | ViewState::List(app) = &mut self.current_view {
-                        if app.confirm_dialog.is_confirmed() {
-                            pending_operation = Some((app.action_type, app.confirm_dialog.packages.clone()));
-                            app.confirm_dialog.cancel(); // Reset dialog
-                        }
-                    }
-
-                    // Execute pending operation if any
-                    if let Some((action_type, packages)) = pending_operation {
-                        // Exit TUI and run command interactively
-                        disable_raw_mode()?;
-                        execute!(io::stdout(), LeaveAlternateScreen)?;
-
-                        let result = match action_type {
-                            ActionType::Install => self.run_install_interactive(&packages),
-                            ActionType::Remove => self.run_remove_interactive(&packages),
-                        };
-
-                        // Wait for user to press Enter
-                        println!("\nPress Enter to continue...");
-                        let mut input = String::new();
-                        let _ = io::stdin().read_line(&mut input);
-
-                        // Re-enter TUI
-                        enable_raw_mode()?;
-                        execute!(io::stdout(), EnterAlternateScreen)?;
-                        terminal.clear()?;
-
-                        // Prepare alert message based on result
-                        let alert_to_show = match result {
-                            Ok(success) => {
-                                if success {
-                                    let message = match action_type {
-                                        ActionType::Install => format!("✓ Successfully installed {} package(s)", packages.len()),
-                                        ActionType::Remove => format!("✓ Successfully removed {} package(s)", packages.len()),
-                                    };
-                                    Some((super::types::AlertType::Success, message))
-                                } else {
-                                    let message = match action_type {
-                                        ActionType::Install => "✗ Installation failed".to_string(),
-                                        ActionType::Remove => "✗ Removal failed".to_string(),
-                                    };
-                                    Some((super::types::AlertType::Error, message))
-                                }
-                            }
-                            Err(e) => {
-                                Some((super::types::AlertType::Error, format!("✗ Error: {}", e)))
-                            }
-                        };
-
-                        // Clear cache for refresh after operation completes
-                        self.cached_installed = None;
-                        // Refresh the current view (this creates a new App)
-                        self.refresh_current_view()?;
-
-                        // Show alert after refresh (so it persists in the new App)
-                        if let Some((alert_type, message)) = alert_to_show {
-                            if let ViewState::Install(app) | ViewState::Remove(app) | ViewState::List(app) = &mut self.current_view {
-                                app.alert.show(alert_type, message);
-                            }
-                        }
-                    }
-
-                    // Check for preview updates
-                    if let ViewState::Install(app) | ViewState::Remove(app) | ViewState::List(app) = &mut self.current_view {
-                        app.check_preview_updates();
-                    }
-
                     // Execute the action after match ends
                     match action {
                         Action::Exit => return Ok(()),
@@ -436,9 +366,78 @@ impl MainMenu {
                 }
             }
 
-            // Always check for update window updates (even without key events)
+            // Check if confirmation dialog was confirmed (outside event loop so it's immediate)
+            let mut pending_operation: Option<(ActionType, Vec<String>)> = None;
+            if let ViewState::Install(app) | ViewState::Remove(app) | ViewState::List(app) = &mut self.current_view {
+                if app.confirm_dialog.is_confirmed() {
+                    pending_operation = Some((app.action_type, app.confirm_dialog.packages.clone()));
+                    app.confirm_dialog.cancel(); // Reset dialog
+                }
+            }
+
+            // Execute pending operation if any
+            if let Some((action_type, packages)) = pending_operation {
+                // Exit TUI and run command interactively
+                disable_raw_mode()?;
+                execute!(io::stdout(), LeaveAlternateScreen)?;
+
+                let result = match action_type {
+                    ActionType::Install => self.run_install_interactive(&packages),
+                    ActionType::Remove => self.run_remove_interactive(&packages),
+                };
+
+                // Wait for user to press Enter
+                println!("\nPress Enter to continue...");
+                let mut input = String::new();
+                let _ = io::stdin().read_line(&mut input);
+
+                // Re-enter TUI
+                enable_raw_mode()?;
+                execute!(io::stdout(), EnterAlternateScreen)?;
+                terminal.clear()?;
+
+                // Prepare alert message based on result
+                let alert_to_show = match result {
+                    Ok(success) => {
+                        if success {
+                            let message = match action_type {
+                                ActionType::Install => format!("✓ Successfully installed {} package(s)", packages.len()),
+                                ActionType::Remove => format!("✓ Successfully removed {} package(s)", packages.len()),
+                            };
+                            Some((super::types::AlertType::Success, message))
+                        } else {
+                            let message = match action_type {
+                                ActionType::Install => "✗ Installation failed".to_string(),
+                                ActionType::Remove => "✗ Removal failed".to_string(),
+                            };
+                            Some((super::types::AlertType::Error, message))
+                        }
+                    }
+                    Err(e) => {
+                        Some((super::types::AlertType::Error, format!("✗ Error: {}", e)))
+                    }
+                };
+
+                // Clear cache for refresh after operation completes
+                self.cached_installed = None;
+                // Refresh the current view (this creates a new App)
+                self.refresh_current_view()?;
+
+                // Show alert after refresh (so it persists in the new App)
+                if let Some((alert_type, message)) = alert_to_show {
+                    if let ViewState::Install(app) | ViewState::Remove(app) | ViewState::List(app) = &mut self.current_view {
+                        app.alert.show(alert_type, message);
+                    }
+                }
+            }
+
+            // Always check for updates (even without key events)
             let mut need_view_refresh = false;
             if let ViewState::Install(app) | ViewState::Remove(app) | ViewState::List(app) = &mut self.current_view {
+                // Check for preview updates (so previews load automatically)
+                app.check_preview_updates();
+
+                // Check for update window updates
                 app.update_window.check_updates();
 
                 // Auto-close update window if completed successfully
