@@ -13,7 +13,7 @@ use colored::Colorize;
 #[command(about = "Modern TUI package manager for Arch Linux", long_about = None)]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
@@ -67,23 +67,29 @@ fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Install {
-            packages,
-            no_interactive,
-        } => {
-            commands::InstallCommand::execute(packages, !no_interactive)?;
-        }
-        Commands::Remove {
-            packages,
-            no_interactive,
-        } => {
-            commands::RemoveCommand::execute(packages, !no_interactive)?;
-        }
-        Commands::Search { query } => {
-            commands::SearchCommand::execute(query)?;
-        }
-        Commands::List { interactive } => {
-            commands::ListCommand::execute(interactive)?;
+        Some(cmd) => match cmd {
+            Commands::Install {
+                packages,
+                no_interactive,
+            } => {
+                commands::InstallCommand::execute(packages, !no_interactive)?;
+            }
+            Commands::Remove {
+                packages,
+                no_interactive,
+            } => {
+                commands::RemoveCommand::execute(packages, !no_interactive)?;
+            }
+            Commands::Search { query } => {
+                commands::SearchCommand::execute(query)?;
+            }
+            Commands::List { interactive } => {
+                commands::ListCommand::execute(interactive)?;
+            }
+        },
+        None => {
+            // No command provided - start interactive menu mode
+            ui::MainMenu::run()?;
         }
     }
 

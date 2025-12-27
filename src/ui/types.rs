@@ -89,3 +89,11 @@ impl ConfirmDialog {
         self.scroll = self.scroll.saturating_sub(1);
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ViewType {
+    Home = 0,
+    Install = 1,
+    Remove = 2,
+    List = 3,
+}

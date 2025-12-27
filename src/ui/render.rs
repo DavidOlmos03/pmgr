@@ -1,5 +1,4 @@
 use super::app::App;
-use super::help_window;
 use super::types::{ActionType, PreviewLayout};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -10,15 +9,19 @@ use ratatui::{
 };
 
 pub fn ui(f: &mut Frame, app: &mut App, prompt: &str) {
+    ui_in_area(f, app, prompt, f.area());
+}
+
+pub fn ui_in_area(f: &mut Frame, app: &mut App, prompt: &str, area: Rect) {
     let chunks = match app.layout {
         PreviewLayout::Vertical => Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(f.area()),
+            .split(area),
         PreviewLayout::Horizontal => Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(f.area()),
+            .split(area),
     };
 
     // Left/Top panel (list)
@@ -599,4 +602,154 @@ fn render_confirm_dialog(f: &mut Frame, app: &App) {
         .style(Style::default().fg(Color::White).bg(Color::Black));
 
     f.render_widget(buttons, chunks[1]);
+}
+
+/// Render tab bar at the top of the screen
+pub fn render_tab_bar(f: &mut Frame, area: Rect, selected_tab: usize) {
+    use super::types::ViewType;
+
+    let tabs = vec![
+        ("[1] Home", ViewType::Home as usize),
+        ("[2] Install", ViewType::Install as usize),
+        ("[3] Remove", ViewType::Remove as usize),
+        ("[4] List", ViewType::List as usize),
+    ];
+
+    let mut tab_spans = vec![];
+
+    for (i, (label, tab_idx)) in tabs.iter().enumerate() {
+        if i > 0 {
+            tab_spans.push(Span::raw(" │ "));
+        }
+
+        let style = if *tab_idx == selected_tab {
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
+                .bg(Color::DarkGray)
+        } else {
+            Style::default().fg(Color::White)
+        };
+
+        tab_spans.push(Span::styled(*label, style));
+    }
+
+    let tabs_line = Line::from(tab_spans);
+    let tabs_paragraph = Paragraph::new(tabs_line)
+        .block(Block::default().borders(Borders::BOTTOM))
+        .style(Style::default().bg(Color::Black));
+
+    f.render_widget(tabs_paragraph, area);
+}
+
+/// Render the home view
+pub fn render_home_view(f: &mut Frame, area: Rect, home_state: &super::home_state::HomeState) {
+    // Create centered content area
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" PMGR - Package Manager ")
+        .title_alignment(Alignment::Center)
+        .style(Style::default().fg(Color::Cyan).bg(Color::Black));
+
+    let inner_area = block.inner(area);
+    f.render_widget(block, area);
+
+    let mut content_lines = vec![];
+
+    // Title section
+    content_lines.push(Line::from(""));
+    content_lines.push(Line::from(vec![
+        Span::styled(
+            "Modern TUI for Arch Linux",
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+        )
+    ]));
+    content_lines.push(Line::from(""));
+    content_lines.push(Line::from("━".repeat(inner_area.width as usize)));
+    content_lines.push(Line::from(""));
+
+    // System Information
+    content_lines.push(Line::from(vec![
+        Span::styled(" System Information", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+    ]));
+
+    if let Some(ref stats) = home_state.stats {
+        content_lines.push(Line::from(vec![
+            Span::raw("nstalled packages: "),
+            Span::styled(
+                stats.installed_count.to_string(),
+                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+            )
+        ]));
+        content_lines.push(Line::from(vec![
+            Span::raw("vailable packages: "),
+            Span::styled(
+                stats.available_count.to_string(),
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            )
+        ]));
+        content_lines.push(Line::from(vec![
+            Span::raw("System updates: "),
+            Span::styled(
+                format!("{} available", stats.updates_available),
+                Style::default().fg(if stats.updates_available > 0 { Color::Red } else { Color::Green })
+                    .add_modifier(Modifier::BOLD)
+            )
+        ]));  
+    } else {  
+        content_lines.push(Line::from("  Loading..."));
+    }
+   
+    content_lines.push(Line::from(""));  
+   
+    // Quick Actions   
+    content_lines.push(Line::from(vec![  
+        Span::styled(" Quick Actions", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+    ]));   
+    content_lines.push(Line::from(vec![  
+        Span::styled("[1]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::raw(" Browse & Install packages")
+    ]));  
+    content_lines.push(Line::from(vec![  
+        Span::styled("[2]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::raw(" Remove packages") 
+    ]));
+    content_lines.push(Line::from(vec![  
+        Span::styled("[3]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::raw(" List installed packages")
+    ]));
+    content_lines.push(Line::from(vec![  
+        Span::styled("[Ctrl+U]", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+        Span::raw(" Update system")
+    ]));   
+    content_lines.push(Line::from(""));  
+   
+    // Keyboard Shortcuts   
+    content_lines.push(Line::from(vec![  
+        Span::styled(" Keyboard Shortcuts", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+    ]));   
+    content_lines.push(Line::from(vec![  
+        Span::styled("1-4", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::raw(": Switch tabs")  
+    ]));  
+    content_lines.push(Line::from(vec![  
+        Span::styled("?", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::raw(": Show help") 
+    ])); 
+    content_lines.push(Line::from(vec![  
+        Span::styled("Ctrl+R", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::raw(": Refresh data")
+    ]));
+    content_lines.push(Line::from(vec![
+        Span::raw("  └─ "),
+        Span::styled("ESC", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        Span::raw(": Exit")
+    ]));
+
+    let content = Paragraph::new(content_lines)
+        .alignment(Alignment::Center)
+        .scroll((home_state.scroll_position, 0))
+        .style(Style::default().fg(Color::White).bg(Color::Black));
+
+    f.render_widget(content, inner_area);
 }
