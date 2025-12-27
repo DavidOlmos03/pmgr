@@ -13,36 +13,27 @@ impl SystemUpdateWindow {
             has_error: false,
             rx: None,
             just_closed: false,
+            title: String::new(),
         }
     }
 
-    pub fn start_update(&mut self) {
+    /// Generic method to execute a command with arguments
+    fn start_command(&mut self, command: String, args: Vec<String>, initial_message: &str, success_message: &str, title: &str) {
         self.active = true;
         self.output.clear();
-        self.output.push("Starting system update...".to_string());
+        self.output.push(initial_message.to_string());
         self.completed = false;
         self.has_error = false;
+        self.title = title.to_string();
 
         let (tx, rx) = mpsc::channel();
         self.rx = Some(rx);
 
+        let success_message = success_message.to_string();
+
         thread::spawn(move || {
-            // First, validate sudo access (password should already be cached)
-            let validate_status = Command::new("sudo")
-                .arg("-n")
-                .arg("true")
-                .status();
-
-            if let Err(_) = validate_status {
-                let _ = tx.send(UpdateMessage::Output("Error: sudo password not cached. This shouldn't happen.".to_string()));
-                let _ = tx.send(UpdateMessage::Completed(false));
-                return;
-            }
-
-            let mut child = match Command::new("sudo")
-                .arg("pacman")
-                .arg("-Syu")
-                .arg("--noconfirm")
+            let mut child = match Command::new(&command)
+                .args(&args)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .spawn()
@@ -92,9 +83,9 @@ impl SystemUpdateWindow {
                 Ok(status) => {
                     let success = status.success();
                     if success {
-                        let _ = tx.send(UpdateMessage::Output("\n✓ System update completed successfully!".to_string()));
+                        let _ = tx.send(UpdateMessage::Output(format!("\n{}", success_message)));
                     } else {
-                        let _ = tx.send(UpdateMessage::Output(format!("\n✗ System update failed with code: {:?}", status.code())));
+                        let _ = tx.send(UpdateMessage::Output(format!("\n✗ Operation failed with code: {:?}", status.code())));
                     }
                     let _ = tx.send(UpdateMessage::Completed(success));
                 }
@@ -104,6 +95,55 @@ impl SystemUpdateWindow {
                 }
             }
         });
+    }
+
+    pub fn start_update(&mut self) {
+        self.start_command(
+            "sudo".to_string(),
+            vec!["pacman".to_string(), "-Syu".to_string(), "--noconfirm".to_string()],
+            "Starting system update...",
+            "✓ System update completed successfully!",
+            "System Update"
+        );
+    }
+
+    pub fn start_install(&mut self, packages: &[String]) {
+        // Extract package names from "repository/package" format
+        let package_names: Vec<String> = packages
+            .iter()
+            .map(|p| {
+                // If package is in "repo/name" format, extract just the name
+                if let Some(idx) = p.rfind('/') {
+                    p[idx + 1..].to_string()
+                } else {
+                    p.clone()
+                }
+            })
+            .collect();
+
+        let mut args = vec!["-S".to_string(), "--noconfirm".to_string()];
+        args.extend(package_names);
+
+        self.start_command(
+            "yay".to_string(),
+            args,
+            &format!("Installing {} package(s)...", packages.len()),
+            "✓ Installation completed successfully!",
+            "Installing Packages"
+        );
+    }
+
+    pub fn start_remove(&mut self, packages: &[String]) {
+        let mut args = vec!["-Rns".to_string(), "--noconfirm".to_string()];
+        args.extend(packages.iter().map(|p| p.clone()));
+
+        self.start_command(
+            "yay".to_string(),
+            args,
+            &format!("Removing {} package(s)...", packages.len()),
+            "✓ Removal completed successfully!",
+            "Removing Packages"
+        );
     }
 
     pub fn check_updates(&mut self) {

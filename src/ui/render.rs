@@ -1,5 +1,5 @@
 use super::app::App;
-use super::types::{ActionType, PreviewLayout};
+use super::types::{ActionType, AlertType, PreviewLayout};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -121,6 +121,11 @@ pub fn ui_in_area(f: &mut Frame, app: &mut App, prompt: &str, area: Rect) {
     if app.confirm_dialog.active {
         render_confirm_dialog(f, app);
     }
+
+    // Alert overlay (rendered last so it appears on top)
+    if app.alert.active {
+        render_alert(f, app);
+    }
 }
 
 fn render_update_window(f: &mut Frame, app: &mut App) {
@@ -142,14 +147,20 @@ fn render_update_window(f: &mut Frame, app: &mut App) {
     f.render_widget(Clear, overlay_area);
 
     // Title based on status
+    let base_title = if app.update_window.title.is_empty() {
+        "Operation"
+    } else {
+        &app.update_window.title
+    };
+
     let title = if app.update_window.completed {
         if app.update_window.has_error {
-            " System Update - FAILED (Alt+X to close) "
+            format!(" {} - FAILED (Alt+X to close) ", base_title)
         } else {
-            " System Update - COMPLETED (closing...) "
+            format!(" {} - COMPLETED (closing...) ", base_title)
         }
     } else {
-        " System Update - Running... "
+        format!(" {} - Running... ", base_title)
     };
 
     let border_color = if app.update_window.completed {
@@ -861,4 +872,65 @@ pub fn render_home_view(f: &mut Frame, area: Rect, home_state: &super::home_stat
 
         f.render_widget(single_column, main_chunks[1]);
     }
+}
+
+fn render_alert(f: &mut Frame, app: &mut App) {
+    // Create a centered overlay area for alert (60% width, auto height)
+    let area = f.area();
+    let overlay_width = (area.width as f32 * 0.6).min(80.0) as u16;
+    let overlay_height = 7; // Fixed height for alert
+
+    let overlay_x = (area.width.saturating_sub(overlay_width)) / 2;
+    let overlay_y = (area.height.saturating_sub(overlay_height)) / 2;
+
+    let overlay_area = Rect {
+        x: overlay_x,
+        y: overlay_y,
+        width: overlay_width,
+        height: overlay_height,
+    };
+
+    // Clear the area
+    f.render_widget(Clear, overlay_area);
+
+    // Determine color based on alert type
+    let (border_color, title_style) = match app.alert.alert_type {
+        AlertType::Success => (Color::Green, Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        AlertType::Error => (Color::Red, Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        AlertType::Info => (Color::Cyan, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+    };
+
+    let title = match app.alert.alert_type {
+        AlertType::Success => "Success",
+        AlertType::Error => "Error",
+        AlertType::Info => "Info",
+    };
+
+    // Create the alert block
+    let block = Block::default()
+        .title(Span::styled(
+            format!(" {} ", title),
+            title_style,
+        ))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color))
+        .style(Style::default().bg(Color::Black));
+
+    // Create message paragraph
+    let message_lines = vec![
+        Line::from(""),
+        Line::from(Span::styled(&app.alert.message, Style::default().fg(Color::White))),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Press any key to close",
+            Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
+        )),
+    ];
+
+    let paragraph = Paragraph::new(message_lines)
+        .block(block)
+        .alignment(Alignment::Center)
+        .wrap(Wrap { trim: false });
+
+    f.render_widget(paragraph, overlay_area);
 }

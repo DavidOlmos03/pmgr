@@ -29,6 +29,7 @@ pub struct SystemUpdateWindow {
     pub has_error: bool,
     pub rx: Option<Receiver<UpdateMessage>>,
     pub just_closed: bool, // Flag to indicate we need to redraw
+    pub title: String, // Window title
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -96,4 +97,39 @@ pub enum ViewType {
     Install = 1,
     Remove = 2,
     List = 3,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum AlertType {
+    Success,
+    Error,
+    Info,
+}
+
+#[derive(Debug, Clone)]
+pub struct Alert {
+    pub active: bool,
+    pub alert_type: AlertType,
+    pub message: String,
+}
+
+impl Alert {
+    pub fn new() -> Self {
+        Self {
+            active: false,
+            alert_type: AlertType::Info,
+            message: String::new(),
+        }
+    }
+
+    pub fn show(&mut self, alert_type: AlertType, message: String) {
+        self.active = true;
+        self.alert_type = alert_type;
+        self.message = message;
+    }
+
+    pub fn close(&mut self) {
+        self.active = false;
+        self.message.clear();
+    }
 }

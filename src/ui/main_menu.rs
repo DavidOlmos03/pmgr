@@ -11,6 +11,7 @@ use crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, layout::{Constraint, Direction, Layout}, Terminal};
 use std::io;
+use std::process::Command;
 use std::time::Duration;
 
 /// Actions that can be requested during event handling
@@ -113,10 +114,163 @@ impl MainMenu {
             // Handle events with polling
             if poll(Duration::from_millis(100))? {
                 if let Event::Key(key) = event::read()? {
-                    // Determine what action to take based on current view and key
-                    let mut action = Action::None;
+                    // Handle global shortcuts first (work in any view)
+                    let handled_globally = match (key.code, key.modifiers) {
+                        // Show help with '?'
+                        (KeyCode::Char('?'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+                            if let ViewState::Install(app) | ViewState::Remove(app) | ViewState::List(app) = &mut self.current_view {
+                                app.help_visible = !app.help_visible;
+                                if !app.help_visible {
+                                    app.help_scroll = 0;
+                                }
+                            }
+                            true
+                        }
+                        // System update with Ctrl+U
+                        (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+                            // Check if we're in a package view
+                            let should_update = matches!(self.current_view, ViewState::Install(_) | ViewState::Remove(_) | ViewState::List(_));
+
+                            if should_update {
+                                // Exit TUI and run update interactively
+                                disable_raw_mode()?;
+                                execute!(
+                                    io::stdout(),
+                                    LeaveAlternateScreen,
+                                    DisableMouseCapture
+                                )?;
+
+                                // Run system update interactively
+                                let result = self.run_update_interactive();
+
+                                // Wait for user to press Enter
+                                println!("\nPress Enter to continue...");
+                                let mut input = String::new();
+                                let _ = io::stdin().read_line(&mut input);
+
+                                // Re-enter TUI
+                                enable_raw_mode()?;
+                                execute!(
+                                    io::stdout(),
+                                    EnterAlternateScreen,
+                                    EnableMouseCapture
+                                )?;
+                                terminal.clear()?;
+
+                                // Show alert based on result
+                                if let ViewState::Install(app) | ViewState::Remove(app) | ViewState::List(app) = &mut self.current_view {
+                                    match result {
+                                        Ok(success) => {
+                                            if success {
+                                                app.alert.show(super::types::AlertType::Success, "✓ System updated successfully".to_string());
+                                            } else {
+                                                app.alert.show(super::types::AlertType::Error, "✗ System update failed".to_string());
+                                            }
+                                        }
+                                        Err(e) => {
+                                            app.alert.show(super::types::AlertType::Error, format!("✗ Error: {}", e));
+                                        }
+                                    }
+                                }
+                            }
+                            true
+                        }
+                        _ => false,
+                    };
+
+                    // If handled globally, skip view-specific handling
+                    if handled_globally {
+                        // Check for preview updates in package views
+                        if let ViewState::Install(app) | ViewState::Remove(app) | ViewState::List(app) = &mut self.current_view {
+                            app.check_preview_updates();
+                            app.update_window.check_updates();
+
+                            // Auto-close update window if completed successfully
+                            if app.update_window.should_auto_close() {
+                                app.update_window.close();
+                            }
+
+                            // Clear terminal if window was just closed
+                            if app.update_window.just_closed {
+                                terminal.clear()?;
+                                app.update_window.clear_just_closed_flag();
+                            }
+                        }
+                        continue;
+                    }
+
+                    // Handle modal windows (update, help, confirm) in package views
+                    if let ViewState::Install(app) | ViewState::Remove(app) | ViewState::List(app) = &mut self.current_view {
+                        // Update window is active
+                        if app.update_window.active {
+                            match (key.code, key.modifiers) {
+                                (KeyCode::Char('x'), KeyModifiers::ALT) => {
+                                    if app.update_window.has_error || app.update_window.completed {
+                                        app.update_window.close();
+                                    }
+                                }
+                                _ => {} // Ignore other keys while update window is active
+                            }
+                            continue;
+                        }
+
+                        // Confirmation dialog is active
+                        if app.confirm_dialog.active {
+                            match (key.code, key.modifiers) {
+                                // Confirm with Y or Enter
+                                (KeyCode::Char('y'), KeyModifiers::NONE | KeyModifiers::SHIFT)
+                                | (KeyCode::Enter, _) => {
+                                    app.confirm_dialog.confirm();
+                                }
+                                // Cancel with N or ESC
+                                (KeyCode::Char('n'), KeyModifiers::NONE | KeyModifiers::SHIFT)
+                                | (KeyCode::Esc, _) => {
+                                    app.confirm_dialog.cancel();
+                                }
+                                // Scroll down
+                                (KeyCode::Down, _) | (KeyCode::Char('j'), KeyModifiers::NONE) => {
+                                    app.confirm_dialog.scroll_down();
+                                }
+                                // Scroll up
+                                (KeyCode::Up, _) | (KeyCode::Char('k'), KeyModifiers::NONE) => {
+                                    app.confirm_dialog.scroll_up();
+                                }
+                                _ => {} // Ignore other keys while dialog is active
+                            }
+                            continue;
+                        }
+
+                        // Help screen is active
+                        if app.help_visible {
+                            match (key.code, key.modifiers) {
+                                (KeyCode::Char('?'), KeyModifiers::NONE | KeyModifiers::SHIFT)
+                                | (KeyCode::Esc, _) => {
+                                    app.help_visible = false;
+                                    app.help_scroll = 0; // Reset scroll when closing
+                                }
+                                // Scroll down
+                                (KeyCode::Down, _) | (KeyCode::Char('j'), KeyModifiers::NONE) => {
+                                    app.help_scroll = app.help_scroll.saturating_add(1);
+                                }
+                                // Scroll up
+                                (KeyCode::Up, _) | (KeyCode::Char('k'), KeyModifiers::NONE) => {
+                                    app.help_scroll = app.help_scroll.saturating_sub(1);
+                                }
+                                _ => {} // Ignore other keys while help is visible
+                            }
+                            continue;
+                        }
+
+                        // Alert is active
+                        if app.alert.active {
+                            // Any key closes the alert
+                            app.alert.close();
+                            continue;
+                        }
+                    }
 
                     // Handle view-specific events
+                    let mut action = Action::None;
                     match &mut self.current_view {
                         ViewState::Home(_) => {
                             // Home view key handling
@@ -198,28 +352,77 @@ impl MainMenu {
                                 }
                                 _ => Action::None,
                             };
+                        }
+                    }
 
-                            // Check if confirmation dialog was confirmed
-                            if app.confirm_dialog.is_confirmed() {
-                                let _packages = app.confirm_dialog.packages.clone();
-                                app.confirm_dialog.cancel(); // Reset dialog
+                    // Check if confirmation dialog was confirmed
+                    let mut pending_operation: Option<(ActionType, Vec<String>)> = None;
+                    if let ViewState::Install(app) | ViewState::Remove(app) | ViewState::List(app) = &mut self.current_view {
+                        if app.confirm_dialog.is_confirmed() {
+                            pending_operation = Some((app.action_type, app.confirm_dialog.packages.clone()));
+                            app.confirm_dialog.cancel(); // Reset dialog
+                        }
+                    }
 
-                                // Execute the action
-                                match app.action_type {
-                                    ActionType::Install => {
-                                        // TODO: Execute install
-                                        // For now, just refresh the view
-                                        self.cached_installed = None;
-                                    }
-                                    ActionType::Remove => {
-                                        // TODO: Execute remove
-                                        // For now, just refresh the view
-                                        self.cached_installed = None;
-                                    }
+                    // Execute pending operation if any
+                    if let Some((action_type, packages)) = pending_operation {
+                        // Exit TUI and run command interactively
+                        disable_raw_mode()?;
+                        execute!(io::stdout(), LeaveAlternateScreen)?;
+
+                        let result = match action_type {
+                            ActionType::Install => self.run_install_interactive(&packages),
+                            ActionType::Remove => self.run_remove_interactive(&packages),
+                        };
+
+                        // Wait for user to press Enter
+                        println!("\nPress Enter to continue...");
+                        let mut input = String::new();
+                        let _ = io::stdin().read_line(&mut input);
+
+                        // Re-enter TUI
+                        enable_raw_mode()?;
+                        execute!(io::stdout(), EnterAlternateScreen)?;
+                        terminal.clear()?;
+
+                        // Prepare alert message based on result
+                        let alert_to_show = match result {
+                            Ok(success) => {
+                                if success {
+                                    let message = match action_type {
+                                        ActionType::Install => format!("✓ Successfully installed {} package(s)", packages.len()),
+                                        ActionType::Remove => format!("✓ Successfully removed {} package(s)", packages.len()),
+                                    };
+                                    Some((super::types::AlertType::Success, message))
+                                } else {
+                                    let message = match action_type {
+                                        ActionType::Install => "✗ Installation failed".to_string(),
+                                        ActionType::Remove => "✗ Removal failed".to_string(),
+                                    };
+                                    Some((super::types::AlertType::Error, message))
                                 }
-                                action = Action::RefreshView;
+                            }
+                            Err(e) => {
+                                Some((super::types::AlertType::Error, format!("✗ Error: {}", e)))
+                            }
+                        };
+
+                        // Clear cache for refresh after operation completes
+                        self.cached_installed = None;
+                        // Refresh the current view (this creates a new App)
+                        self.refresh_current_view()?;
+
+                        // Show alert after refresh (so it persists in the new App)
+                        if let Some((alert_type, message)) = alert_to_show {
+                            if let ViewState::Install(app) | ViewState::Remove(app) | ViewState::List(app) = &mut self.current_view {
+                                app.alert.show(alert_type, message);
                             }
                         }
+                    }
+
+                    // Check for preview updates
+                    if let ViewState::Install(app) | ViewState::Remove(app) | ViewState::List(app) = &mut self.current_view {
+                        app.check_preview_updates();
                     }
 
                     // Execute the action after match ends
@@ -230,12 +433,30 @@ impl MainMenu {
                         Action::RefreshHomeStats => self.load_home_stats()?,
                         Action::None => {}
                     }
-
-                    // Check for preview updates in package views
-                    if let ViewState::Install(app) | ViewState::Remove(app) | ViewState::List(app) = &mut self.current_view {
-                        app.check_preview_updates();
-                    }
                 }
+            }
+
+            // Always check for update window updates (even without key events)
+            let mut need_view_refresh = false;
+            if let ViewState::Install(app) | ViewState::Remove(app) | ViewState::List(app) = &mut self.current_view {
+                app.update_window.check_updates();
+
+                // Auto-close update window if completed successfully
+                if app.update_window.should_auto_close() {
+                    app.update_window.close();
+                    need_view_refresh = true; // Refresh view after successful operation
+                }
+
+                // Clear terminal if window was just closed to force full redraw
+                if app.update_window.just_closed {
+                    terminal.clear()?;
+                    app.update_window.clear_just_closed_flag();
+                }
+            }
+
+            // Refresh view if needed (after window closes)
+            if need_view_refresh {
+                self.refresh_current_view()?;
             }
         }
     }
@@ -365,5 +586,55 @@ impl MainMenu {
             _ => {}
         }
         Ok(())
+    }
+
+    /// Run install command interactively (outside TUI)
+    fn run_install_interactive(&self, packages: &[String]) -> Result<bool> {
+        // Extract package names from "repository/package" format
+        let package_names: Vec<String> = packages
+            .iter()
+            .map(|p| {
+                if let Some(idx) = p.rfind('/') {
+                    p[idx + 1..].to_string()
+                } else {
+                    p.clone()
+                }
+            })
+            .collect();
+
+        println!("Installing {} package(s)...", packages.len());
+        println!("Packages: {}\n", package_names.join(", "));
+
+        let status = Command::new("yay")
+            .arg("-S")
+            .args(&package_names)
+            .status()?;
+
+        Ok(status.success())
+    }
+
+    /// Run remove command interactively (outside TUI)
+    fn run_remove_interactive(&self, packages: &[String]) -> Result<bool> {
+        println!("Removing {} package(s)...", packages.len());
+        println!("Packages: {}\n", packages.join(", "));
+
+        let status = Command::new("yay")
+            .arg("-Rns")
+            .args(packages)
+            .status()?;
+
+        Ok(status.success())
+    }
+
+    /// Run system update interactively (outside TUI)
+    fn run_update_interactive(&self) -> Result<bool> {
+        println!("Running system update...\n");
+
+        let status = Command::new("sudo")
+            .arg("pacman")
+            .arg("-Syu")
+            .status()?;
+
+        Ok(status.success())
     }
 }

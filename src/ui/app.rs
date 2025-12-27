@@ -1,4 +1,4 @@
-use super::types::{ActionType, ConfirmDialog, PreviewLayout, SystemUpdateWindow};
+use super::types::{ActionType, Alert, ConfirmDialog, PreviewLayout, SystemUpdateWindow};
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use ratatui::widgets::ListState;
@@ -27,6 +27,7 @@ pub struct App {
     pub help_scroll: u16, // Vertical scroll position for help window
     pub confirm_dialog: ConfirmDialog, // Confirmation dialog for install/remove
     pub action_type: ActionType, // Type of action (install/remove)
+    pub alert: Alert, // Alert/notification system
 }
 
 impl App {
@@ -69,6 +70,7 @@ impl App {
             help_scroll: 0,
             confirm_dialog: ConfirmDialog::new(),
             action_type,
+            alert: Alert::new(),
         };
 
         app.request_preview();
