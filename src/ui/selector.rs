@@ -1,5 +1,6 @@
 use super::app::App;
 use super::render::ui;
+use super::types::ActionType;
 use anyhow::Result;
 use crossterm::{
     event::{self, poll, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
@@ -52,6 +53,33 @@ fn run_app<B: ratatui::backend::Backend>(
                     continue;
                 }
 
+                // If confirmation dialog is active, handle separately
+                if app.confirm_dialog.active {
+                    match (key.code, key.modifiers) {
+                        // Confirm with Y or Enter
+                        (KeyCode::Char('y'), KeyModifiers::NONE | KeyModifiers::SHIFT)
+                        | (KeyCode::Enter, _) => {
+                            app.confirm_dialog.confirm();
+                            return Ok(app.confirm_dialog.packages.clone());
+                        }
+                        // Cancel with N or ESC
+                        (KeyCode::Char('n'), KeyModifiers::NONE | KeyModifiers::SHIFT)
+                        | (KeyCode::Esc, _) => {
+                            app.confirm_dialog.cancel();
+                        }
+                        // Scroll down
+                        (KeyCode::Down, _) | (KeyCode::Char('j'), KeyModifiers::NONE) => {
+                            app.confirm_dialog.scroll_down();
+                        }
+                        // Scroll up
+                        (KeyCode::Up, _) | (KeyCode::Char('k'), KeyModifiers::NONE) => {
+                            app.confirm_dialog.scroll_up();
+                        }
+                        _ => {} // Ignore other keys while dialog is active
+                    }
+                    continue;
+                }
+
                 // If help screen is visible, handle separately
                 if app.help_visible {
                     match (key.code, key.modifiers) {
@@ -83,9 +111,12 @@ fn run_app<B: ratatui::backend::Backend>(
                     (KeyCode::Esc, _) => {
                         return Ok(Vec::new());
                     }
-                    // Confirm on Enter
+                    // Confirm on Enter - show confirmation dialog
                     (KeyCode::Enter, _) => {
-                        return Ok(app.get_selected_items());
+                        let selected = app.get_selected_items();
+                        if !selected.is_empty() {
+                            app.confirm_dialog.show(app.action_type, selected);
+                        }
                     }
                     // Start system update with Ctrl+U
                     (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
@@ -164,6 +195,7 @@ impl Selector {
         prompt: &str,
         multi: bool,
         preview_cmd: Option<String>,
+        action_type: ActionType,
     ) -> Result<Vec<String>> {
         // Setup terminal
         enable_raw_mode()?;
@@ -173,7 +205,7 @@ impl Selector {
         let mut terminal = Terminal::new(backend)?;
 
         // Create app and run
-        let app = App::new(items, multi, preview_cmd);
+        let app = App::new(items, multi, preview_cmd, action_type);
         let result = run_app(&mut terminal, app, prompt);
 
         // Restore terminal
@@ -195,6 +227,7 @@ impl Selector {
             "Select packages to remove (TAB: multi-select, ENTER: confirm): ",
             true,
             Some("echo {} | xargs yay -Qi".to_string()),
+            ActionType::Remove,
         )
     }
 
@@ -205,6 +238,7 @@ impl Selector {
             "Select packages to install (TAB: multi-select, ENTER: confirm): ",
             true,
             Some("echo {} | xargs yay -Si".to_string()),
+            ActionType::Install,
         )
     }
 
@@ -215,6 +249,7 @@ impl Selector {
             "Browse installed packages (ESC to exit): ",
             false,
             Some("echo {} | xargs yay -Qi".to_string()),
+            ActionType::Install, // Default to Install for browse mode
         )?;
 
         Ok(result.first().cloned())

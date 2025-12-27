@@ -1,6 +1,6 @@
 use super::app::App;
 use super::help_window;
-use super::types::PreviewLayout;
+use super::types::{ActionType, PreviewLayout};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -112,6 +112,11 @@ pub fn ui(f: &mut Frame, app: &mut App, prompt: &str) {
     // Help screen overlay
     if app.help_visible {
         render_help_window(f, app);
+    }
+
+    // Confirmation dialog overlay
+    if app.confirm_dialog.active {
+        render_confirm_dialog(f, app);
     }
 }
 
@@ -403,4 +408,195 @@ fn render_help_window(f: &mut Frame, app: &mut App) {
 
         f.render_widget(para, main_chunks[1]);
     }
+}
+
+fn render_confirm_dialog(f: &mut Frame, app: &App) {
+    // Create a responsive centered dialog
+    let area = f.area();
+
+    // Calculate width based on longest package name
+    let min_width = 40u16;
+    let max_width = 55u16;
+
+    // Find longest package name
+    let max_pkg_len = app.confirm_dialog.packages
+        .iter()
+        .map(|p| p.len())
+        .max()
+        .unwrap_or(20) as u16;
+
+    // Calculate needed width based on:
+    // - Longest package + "  • " + padding: max_pkg_len + 8
+    // - Buttons line width: ~30 chars ("  ┌─────────┐  ┌──────────┐")
+    // - Message width: ~45 chars
+    let message_width = 45u16;
+    let buttons_width = 30u16;
+    let pkg_width = max_pkg_len + 8;
+
+    let content_width = message_width.max(buttons_width).max(pkg_width);
+    let dialog_width = content_width.min(max_width).max(min_width).min(area.width.saturating_sub(4));
+
+    // Calculate height based on content
+    let max_visible_packages = 6u16;
+    let package_count = (app.confirm_dialog.packages.len() as u16).min(max_visible_packages);
+
+    // Height breakdown:
+    // - Title border: 2 lines
+    // - message + empty line: 2 lines
+    // - Packages: package_count lines
+    // - Empty line: 1 line
+    // - Separator + empty line: 2 lines
+    // - Question + empty line: 2 lines
+    // - Buttons: 3 lines
+    // - ESC text: 1 line
+    // - Bottom border included in calculation
+    let content_height = 2 + 2 + package_count + 1 + 2 + 2 + 3 + 1;
+    let max_height = (area.height as f32 * 0.7) as u16;
+    let dialog_height = content_height.min(max_height).max(16).min(area.height.saturating_sub(4));
+
+    let dialog_x = (area.width.saturating_sub(dialog_width)) / 2;
+    let dialog_y = (area.height.saturating_sub(dialog_height)) / 2;
+
+    let dialog_area = Rect {
+        x: dialog_x,
+        y: dialog_y,
+        width: dialog_width,
+        height: dialog_height,
+    };
+
+    // Clear the background
+    f.render_widget(Clear, dialog_area);
+
+    // Determine colors and title based on action type
+    let (title_text, border_color) = match app.confirm_dialog.action_type {
+        ActionType::Install => (
+            " Confirm Installation ",
+            Color::Green,
+        ),
+        ActionType::Remove => (
+            " Confirm Removal ",
+            Color::Red,
+        ),
+    };
+
+    // Add scroll hint to title if there are many packages
+    let title = if app.confirm_dialog.packages.len() > max_visible_packages as usize {
+        format!("{} - ↑/↓ to scroll ", title_text)
+    } else {
+        title_text.to_string()
+    };
+
+    let dialog_block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .style(Style::default().fg(border_color).bg(Color::Black));
+
+    let inner_area = dialog_block.inner(dialog_area);
+
+    // Render block first
+    f.render_widget(dialog_block, dialog_area);
+
+    // Split inner area: package list area + buttons area
+    // Package area height: 2 (header) + package_count + 1 (bottom padding)
+    let package_area_height = 2 + package_count + 1;
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(package_area_height), // Package list (scrollable)
+            Constraint::Min(9),                      // Buttons (fixed)
+        ])
+        .split(inner_area);
+
+    // Create package list content
+    let mut package_lines = vec![];
+
+    // Action message
+    let action_msg = match app.confirm_dialog.action_type {
+        ActionType::Install => "The following packages will be installed:",
+        ActionType::Remove => "The following packages will be removed:",
+    };
+    package_lines.push(Line::from(vec![
+        Span::styled(action_msg, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+    ]));
+    package_lines.push(Line::from(""));
+
+    // All packages (no limit, scroll handles overflow)
+    for pkg in &app.confirm_dialog.packages {
+        // Truncate package name if too long
+        let max_pkg_width = (dialog_width.saturating_sub(8)) as usize;
+        let pkg_display = if pkg.len() > max_pkg_width {
+            format!("{}...", &pkg[..max_pkg_width.saturating_sub(3)])
+        } else {
+            pkg.clone()
+        };
+
+        package_lines.push(Line::from(vec![
+            Span::raw("  • "),
+            Span::styled(pkg_display, Style::default().fg(Color::Cyan))
+        ]));
+    }
+
+    package_lines.push(Line::from(""));
+
+    // Package list with scroll
+    let package_list = Paragraph::new(package_lines)
+        .scroll((app.confirm_dialog.scroll, 0))
+        .alignment(Alignment::Left)
+        .style(Style::default().fg(Color::White).bg(Color::Black));
+
+    f.render_widget(package_list, chunks[0]);
+
+    // Create buttons content (fixed, no scroll)
+    let mut button_lines = vec![];
+
+    // Calculate separator width
+    let separator_width = dialog_width.saturating_sub(4) as usize;
+    let separator = "━".repeat(separator_width);
+
+    button_lines.push(Line::from(separator));
+    button_lines.push(Line::from(""));
+
+    // Confirmation prompt with icon
+    button_lines.push(Line::from(vec![
+        Span::styled("", Style::default().fg(Color::Yellow)), // Question icon
+        Span::raw(" "),
+        Span::styled("Do you want to continue?", Style::default().fg(Color::White).add_modifier(Modifier::BOLD))
+    ]));
+    button_lines.push(Line::from(""));
+
+    // Buttons with box drawing and icons
+    button_lines.push(Line::from(vec![
+        Span::styled("┌───────────┐", Style::default().fg(Color::Green)),
+        Span::raw("  "),
+        Span::styled("┌────────────┐", Style::default().fg(Color::Red)),
+    ]));
+    button_lines.push(Line::from(vec![
+        Span::styled("│ ", Style::default().fg(Color::Green)),
+        Span::styled("✓ ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)), // Checkmark icon
+        Span::styled("Y", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        Span::styled(" - Yes │", Style::default().fg(Color::Green)),
+        Span::raw("  "),
+        Span::styled("│ ", Style::default().fg(Color::Red)),
+        Span::styled("✗ ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)), // X icon
+        Span::styled("N", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        Span::styled(" - No   │", Style::default().fg(Color::Red)),
+    ]));
+    button_lines.push(Line::from(vec![
+        Span::styled("└───────────┘", Style::default().fg(Color::Green)),
+        Span::raw("  "),
+        Span::styled("└────────────┘", Style::default().fg(Color::Red)),
+    ]));
+    button_lines.push(Line::from(vec![
+        Span::styled(" ", Style::default().fg(Color::Gray)), // Keyboard icon
+        Span::raw(" Press "),
+        Span::styled("ESC", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        Span::raw(" to cancel"),
+    ]));
+
+    let buttons = Paragraph::new(button_lines)
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(Color::White).bg(Color::Black));
+
+    f.render_widget(buttons, chunks[1]);
 }

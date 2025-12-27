@@ -1,4 +1,4 @@
-use super::types::{PreviewLayout, SystemUpdateWindow};
+use super::types::{ActionType, ConfirmDialog, PreviewLayout, SystemUpdateWindow};
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use ratatui::widgets::ListState;
@@ -25,10 +25,12 @@ pub struct App {
     pub update_window: SystemUpdateWindow,
     pub help_visible: bool, // Flag to show help screen
     pub help_scroll: u16, // Vertical scroll position for help window
+    pub confirm_dialog: ConfirmDialog, // Confirmation dialog for install/remove
+    pub action_type: ActionType, // Type of action (install/remove)
 }
 
 impl App {
-    pub fn new(items: Vec<String>, multi: bool, preview_cmd: Option<String>) -> Self {
+    pub fn new(items: Vec<String>, multi: bool, preview_cmd: Option<String>, action_type: ActionType) -> Self {
         let filtered_items: Vec<(String, i64)> = items
             .iter()
             .map(|item| (item.clone(), 0))
@@ -65,6 +67,8 @@ impl App {
             update_window: SystemUpdateWindow::new(),
             help_visible: false,
             help_scroll: 0,
+            confirm_dialog: ConfirmDialog::new(),
+            action_type,
         };
 
         app.request_preview();
