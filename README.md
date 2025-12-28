@@ -17,31 +17,25 @@ A modern, interactive Terminal User Interface (TUI) package manager for Arch Lin
 - 🎹 **Keyboard-Driven** - Efficient keyboard shortcuts for power users
 - 📦 **System Updates** - One-key system update functionality
 
-## 📸 Screenshots
+## 🎥 Demo
 
-### Main Menu
-<!-- Screenshot showing the home view with system statistics and quick actions -->
-![Home View](./imgs/home.png)
+Watch the full demo showcasing all features:
 
-*The main menu displays system information, quick actions, and keyboard shortcuts.*
+[![PMGR Demo](https://img.youtube.com/vi/DrcBkv0LIw8/maxresdefault.jpg)](https://www.youtube.com/watch?v=DrcBkv0LIw8)
 
-### Package Installation
-<!-- Screenshot showing the install view with package list and preview panel -->
-![Install View](./imgs/install.png)
+### What you'll see in the demo:
 
-*Browse and search through thousands of packages with live preview of package details.*
+**Main Menu**
+- The main menu displays system information, quick actions, and keyboard shortcuts.
 
-### Confirmation Dialog
-<!-- Screenshot showing the confirmation dialog when removing packages -->
-![Confirmation Dialog](./imgs/delete.png)
+**Package Installation**
+- Browse and search through thousands of packages with live preview of package details.
 
-*Clear confirmation dialogs with package details before any destructive operations.*
+**Confirmation Dialog**
+- Clear confirmation dialogs with package details before any destructive operations.
 
-### Keyboard Shortcuts
-<!-- Screenshot showing the help screen with all available shortcuts -->
-![Help Screen](./imgs/shortcuts.png)
-
-*Comprehensive help screen accessible with '?' key showing all available commands.*
+**Keyboard Shortcuts**
+- Comprehensive help screen accessible with '?' key showing all available commands.
 
 ## 🚀 Installation
 
