@@ -3,6 +3,7 @@ name = "pmgr"
 version = "0.1.0"
 edition = "2021"
 authors = ["David"]
+repository = "https://github.com/DavidOlmos03/pmgr"
 description = "Modern TUI package manager for Arch Linux"
 
 [dependencies]

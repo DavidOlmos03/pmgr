@@ -2,7 +2,7 @@ use super::app::App;
 use super::types::{ActionType, AlertType, PreviewLayout};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Color, Modifier, Style, Stylize},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
     Frame,
@@ -76,7 +76,7 @@ pub fn ui_in_area(f: &mut Frame, app: &mut App, prompt: &str, area: Rect) {
         )
         .highlight_style(
             Style::default()
-                .bg(Color::DarkGray)
+                //.bg(Color::DarkGray)
                 .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol(">> ");
@@ -176,7 +176,7 @@ fn render_update_window(f: &mut Frame, app: &mut App) {
     let update_block = Block::default()
         .borders(Borders::ALL)
         .title(title)
-        .style(Style::default().fg(border_color).bg(Color::Black));
+        .style(Style::default().fg(border_color));
 
     // Calculate how many lines we can show (subtract 2 for borders)
     let content_height = overlay_height.saturating_sub(2) as usize;
@@ -236,7 +236,7 @@ fn render_update_window(f: &mut Frame, app: &mut App) {
     let update_content = Paragraph::new(output_text)
         .block(update_block)
         .wrap(Wrap { trim: false })
-        .style(Style::default().fg(Color::White).bg(Color::Black));
+        .style(Style::default().fg(Color::White));
 
     f.render_widget(update_content, overlay_area);
 }
@@ -269,7 +269,7 @@ fn render_help_window(f: &mut Frame, app: &mut App) {
     let help_block = Block::default()
         .borders(Borders::ALL)
         .title(" Help - Press '?' or ESC to close | ↑/↓ to scroll ")
-        .style(Style::default().fg(Color::Cyan).bg(Color::Black));
+        .style(Style::default().fg(Color::Cyan));
 
     // Split into title area and content area
     let inner_area = help_block.inner(overlay_area);
@@ -299,7 +299,7 @@ fn render_help_window(f: &mut Frame, app: &mut App) {
 
     let title_widget = Paragraph::new(title_lines)
         .alignment(Alignment::Center)
-        .style(Style::default().fg(Color::White).bg(Color::Black));
+        .style(Style::default().fg(Color::White));
 
     f.render_widget(title_widget, main_chunks[0]);
 
@@ -368,11 +368,11 @@ fn render_help_window(f: &mut Frame, app: &mut App) {
 
         let left_para = Paragraph::new(left_content)
             .scroll((app.help_scroll, 0))
-            .style(Style::default().fg(Color::White).bg(Color::Black));
+            .style(Style::default().fg(Color::White));
 
         let right_para = Paragraph::new(right_content)
             .scroll((app.help_scroll, 0))
-            .style(Style::default().fg(Color::White).bg(Color::Black));
+            .style(Style::default().fg(Color::White));
 
         f.render_widget(left_para, columns[0]);
         f.render_widget(right_para, columns[1]);
@@ -418,7 +418,7 @@ fn render_help_window(f: &mut Frame, app: &mut App) {
 
         let para = Paragraph::new(content)
             .scroll((app.help_scroll, 0))
-            .style(Style::default().fg(Color::White).bg(Color::Black));
+            .style(Style::default().fg(Color::White));
 
         f.render_widget(para, main_chunks[1]);
     }
@@ -503,7 +503,7 @@ fn render_confirm_dialog(f: &mut Frame, app: &App) {
     let dialog_block = Block::default()
         .borders(Borders::ALL)
         .title(title)
-        .style(Style::default().fg(border_color).bg(Color::Black));
+        .style(Style::default().fg(border_color));
 
     let inner_area = dialog_block.inner(dialog_area);
 
@@ -557,7 +557,7 @@ fn render_confirm_dialog(f: &mut Frame, app: &App) {
     let package_list = Paragraph::new(package_lines)
         .scroll((app.confirm_dialog.scroll, 0))
         .alignment(Alignment::Left)
-        .style(Style::default().fg(Color::White).bg(Color::Black));
+        .style(Style::default().fg(Color::White));
 
     f.render_widget(package_list, chunks[0]);
 
@@ -610,7 +610,7 @@ fn render_confirm_dialog(f: &mut Frame, app: &App) {
 
     let buttons = Paragraph::new(button_lines)
         .alignment(Alignment::Center)
-        .style(Style::default().fg(Color::White).bg(Color::Black));
+        .style(Style::default().fg(Color::White));
 
     f.render_widget(buttons, chunks[1]);
 }
@@ -637,7 +637,7 @@ pub fn render_tab_bar(f: &mut Frame, area: Rect, selected_tab: usize) {
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD)
-                .bg(Color::DarkGray)
+                //.bg(Color::DarkGray)
         } else {
             Style::default().fg(Color::White)
         };
@@ -647,8 +647,7 @@ pub fn render_tab_bar(f: &mut Frame, area: Rect, selected_tab: usize) {
 
     let tabs_line = Line::from(tab_spans);
     let tabs_paragraph = Paragraph::new(tabs_line)
-        .block(Block::default().borders(Borders::BOTTOM))
-        .style(Style::default().bg(Color::Black));
+        .block(Block::default().borders(Borders::BOTTOM));
 
     f.render_widget(tabs_paragraph, area);
 }
@@ -660,7 +659,7 @@ pub fn render_home_view(f: &mut Frame, area: Rect, home_state: &super::home_stat
         .borders(Borders::ALL)
         .title(" PMGR - Package Manager ")
         .title_alignment(Alignment::Center)
-        .style(Style::default().fg(Color::Cyan).bg(Color::Black));
+        .style(Style::default().fg(Color::Cyan));
 
     let inner_area = block.inner(area);
     f.render_widget(block, area);
@@ -669,13 +668,14 @@ pub fn render_home_view(f: &mut Frame, area: Rect, home_state: &super::home_stat
     let main_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(10), // Title + separator
+            Constraint::Length(12), // Title + separator
             Constraint::Min(0),     // Sections
         ])
         .split(inner_area);
 
     // Render title section (ASCII art + subtitle)
     let mut title_lines = vec![];
+    title_lines.push(Line::from(""));
     title_lines.push(Line::from(Span::styled(
         "  ______   _____    ___________",
         Style::default().fg(Color::Rgb(210, 215, 255)),
@@ -697,18 +697,32 @@ pub fn render_home_view(f: &mut Frame, area: Rect, home_state: &super::home_stat
         Style::default().fg(Color::Rgb(165, 170, 210)),
     )));
     title_lines.push(Line::from(""));
-    title_lines.push(Line::from(Span::styled(
-        "Modern TUI for Arch Linux",
-        Style::default()
-            .fg(Color::DarkGray)
-            .add_modifier(Modifier::ITALIC),
-    )));
-    title_lines.push(Line::from(""));
-    title_lines.push(Line::from("━".repeat(inner_area.width as usize)));
+    title_lines.push(Line::from(vec![
+        "Modern package manager ".fg(Color::Cyan),
+        "for Arch Linux".yellow().italic(),
+    ]));
+    title_lines.push(Line::from(
+        ratatui::symbols::line::HORIZONTAL
+            .repeat(50)
+            .fg(Color::Rgb(100, 100, 100)),
+    ));
+    title_lines.push(Line::from(
+    env!("CARGO_PKG_REPOSITORY")
+        .italic()
+        .fg(Color::Gray),
+    ));
+    title_lines.push(Line::from(vec![
+        "[".fg(Color::Rgb(100, 100, 100)),
+        "with ".into(),
+        "♥".cyan(),
+        " by ".into(),
+        "@DavidOlmos03".cyan(),
+        "]".fg(Color::Rgb(100, 100, 100)),
+    ]));
 
     let title_widget = Paragraph::new(title_lines)
         .alignment(Alignment::Center)
-        .style(Style::default().fg(Color::White).bg(Color::Black));
+        .style(Style::default().fg(Color::White));
 
     f.render_widget(title_widget, main_chunks[0]);
 
@@ -727,33 +741,40 @@ pub fn render_home_view(f: &mut Frame, area: Rect, home_state: &super::home_stat
     sys_info_lines.push(Line::from(vec![
         Span::styled("System Information", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
     ]));
+    sys_info_lines.push(Line::from(
+        ratatui::symbols::line::HORIZONTAL
+            .repeat(18)
+            .fg(Color::Rgb(100, 100, 100)),
+    ));
     sys_info_lines.push(Line::from(""));
 
     if let Some(ref stats) = home_state.stats {
         sys_info_lines.push(Line::from(vec![
-            Span::raw(" Installed: "),
+            "Installed".cyan(),
+            Span::raw(": ").fg(Color::Rgb(100, 100, 100)),
             Span::styled(
                 stats.installed_count.to_string(),
-                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+                Style::default().fg(Color::Rgb(150, 255, 150))
             )
         ]));
         sys_info_lines.push(Line::from(vec![
-            Span::raw(" Available: "),
+            "Available".cyan(),
+            Span::raw(": ").fg(Color::Rgb(100, 100, 100)),
             Span::styled(
                 stats.available_count.to_string(),
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                Style::default().fg(Color::Rgb(150, 200, 255))
             )
         ]));
         sys_info_lines.push(Line::from(vec![
-            Span::raw(" Updates: "),
+            "Updates".cyan(),
+            Span::raw(": ").fg(Color::Rgb(100, 100, 100)),
             Span::styled(
                 format!("{}", stats.updates_available),
-                Style::default().fg(if stats.updates_available > 0 { Color::Red } else { Color::Green })
-                    .add_modifier(Modifier::BOLD)
+                Style::default().fg(if stats.updates_available > 0 { Color::Rgb(255, 150, 150) } else { Color::Rgb(150, 255, 150) })
             )
         ]));
     } else {
-        sys_info_lines.push(Line::from(" Loading..."));
+        sys_info_lines.push(Line::from("Loading...".italic()));
     }
 
     // Create Quick Actions section
@@ -761,22 +782,31 @@ pub fn render_home_view(f: &mut Frame, area: Rect, home_state: &super::home_stat
     quick_actions_lines.push(Line::from(vec![
         Span::styled("Quick Actions", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
     ]));
+    quick_actions_lines.push(Line::from(
+        ratatui::symbols::line::HORIZONTAL
+            .repeat(13)
+            .fg(Color::Rgb(100, 100, 100)),
+    ));
     quick_actions_lines.push(Line::from(""));
     quick_actions_lines.push(Line::from(vec![
-        Span::styled(" [1]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::raw(" Install packages")
+        "[1]".cyan(),
+        Span::raw(": ").fg(Color::Rgb(100, 100, 100)),
+        "Install packages".into(),
     ]));
     quick_actions_lines.push(Line::from(vec![
-        Span::styled(" [2]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::raw(" Remove packages")
+        "[2]".cyan(),
+        Span::raw(": ").fg(Color::Rgb(100, 100, 100)),
+        "Remove packages".into(),
     ]));
     quick_actions_lines.push(Line::from(vec![
-        Span::styled(" [3]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::raw(" List packages")
+        "[3]".cyan(),
+        Span::raw(": ").fg(Color::Rgb(100, 100, 100)),
+        "List packages".into(),
     ]));
     quick_actions_lines.push(Line::from(vec![
-        Span::styled(" [Ctrl+U]", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-        Span::raw(" System update")
+        "[Ctrl+U]".fg(Color::Magenta),
+        Span::raw(": ").fg(Color::Rgb(100, 100, 100)),
+        "System update".into(),
     ]));
 
     // Create Keyboard Shortcuts section
@@ -784,22 +814,31 @@ pub fn render_home_view(f: &mut Frame, area: Rect, home_state: &super::home_stat
     shortcuts_lines.push(Line::from(vec![
         Span::styled("Keyboard Shortcuts", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
     ]));
+    shortcuts_lines.push(Line::from(
+        ratatui::symbols::line::HORIZONTAL
+            .repeat(18)
+            .fg(Color::Rgb(100, 100, 100)),
+    ));
     shortcuts_lines.push(Line::from(""));
     shortcuts_lines.push(Line::from(vec![
-        Span::styled(" 1-4", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::raw(": Switch tabs")
+        "1-4".cyan(),
+        Span::raw(": ").fg(Color::Rgb(100, 100, 100)),
+        "Switch tabs".into(),
     ]));
     shortcuts_lines.push(Line::from(vec![
-        Span::styled(" ?", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::raw(": Show help")
+        "?".cyan(),
+        Span::raw(": ").fg(Color::Rgb(100, 100, 100)),
+        "Show help".into(),
     ]));
     shortcuts_lines.push(Line::from(vec![
-        Span::styled(" Ctrl+R", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::raw(": Refresh data")
+        "Ctrl+R".cyan(),
+        Span::raw(": ").fg(Color::Rgb(100, 100, 100)),
+        "Refresh data".into(),
     ]));
     shortcuts_lines.push(Line::from(vec![
-        Span::styled(" ESC", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-        Span::raw(": Exit")
+        "ESC".fg(Color::Red),
+        Span::raw(": ").fg(Color::Rgb(100, 100, 100)),
+        "Exit".into(),
     ]));
 
     // Render sections based on number of columns
@@ -815,16 +854,16 @@ pub fn render_home_view(f: &mut Frame, area: Rect, home_state: &super::home_stat
             .split(main_chunks[1]);
 
         let sys_info = Paragraph::new(sys_info_lines)
-            .alignment(Alignment::Left)
-            .style(Style::default().fg(Color::White).bg(Color::Black));
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::White));
 
         let quick_actions = Paragraph::new(quick_actions_lines)
-            .alignment(Alignment::Left)
-            .style(Style::default().fg(Color::White).bg(Color::Black));
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::White));
 
         let shortcuts = Paragraph::new(shortcuts_lines)
-            .alignment(Alignment::Left)
-            .style(Style::default().fg(Color::White).bg(Color::Black));
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::White));
 
         f.render_widget(sys_info, columns[0]);
         f.render_widget(quick_actions, columns[1]);
@@ -842,7 +881,7 @@ pub fn render_home_view(f: &mut Frame, area: Rect, home_state: &super::home_stat
         // Left column: System Info
         let sys_info = Paragraph::new(sys_info_lines)
             .alignment(Alignment::Left)
-            .style(Style::default().fg(Color::White).bg(Color::Black));
+            .style(Style::default().fg(Color::White));
 
         // Right column: Quick Actions + Shortcuts
         let mut right_column_lines = vec![];
@@ -852,7 +891,7 @@ pub fn render_home_view(f: &mut Frame, area: Rect, home_state: &super::home_stat
 
         let right_column = Paragraph::new(right_column_lines)
             .alignment(Alignment::Left)
-            .style(Style::default().fg(Color::White).bg(Color::Black));
+            .style(Style::default().fg(Color::White));
 
         f.render_widget(sys_info, columns[0]);
         f.render_widget(right_column, columns[1]);
@@ -868,7 +907,7 @@ pub fn render_home_view(f: &mut Frame, area: Rect, home_state: &super::home_stat
         let single_column = Paragraph::new(all_lines)
             .alignment(Alignment::Center)
             .scroll((home_state.scroll_position, 0))
-            .style(Style::default().fg(Color::White).bg(Color::Black));
+            .style(Style::default().fg(Color::White));
 
         f.render_widget(single_column, main_chunks[1]);
     }
@@ -914,7 +953,7 @@ fn render_alert(f: &mut Frame, app: &mut App) {
         ))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color))
-        .style(Style::default().bg(Color::Black));
+        .style(Style::default());
 
     // Create message paragraph
     let message_lines = vec![
