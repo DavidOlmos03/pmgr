@@ -14,6 +14,7 @@ impl SystemUpdateWindow {
             rx: None,
             just_closed: false,
             title: String::new(),
+            cancelled_by_user: false,
         }
     }
 
@@ -32,8 +33,13 @@ impl SystemUpdateWindow {
         let success_message = success_message.to_string();
 
         thread::spawn(move || {
+            // Log the command being executed for debugging
+            let _ = tx.send(UpdateMessage::Output(format!("Executing: {} {}", command, args.join(" "))));
+            let _ = tx.send(UpdateMessage::Output(String::new())); // Empty line for readability
+
             let mut child = match Command::new(&command)
                 .args(&args)
+                .stdin(Stdio::null()) // Polkit will handle authentication via GUI
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .spawn()
@@ -99,11 +105,36 @@ impl SystemUpdateWindow {
 
     pub fn start_update(&mut self) {
         self.start_command(
-            "sudo".to_string(),
+            "pkexec".to_string(),
             vec!["pacman".to_string(), "-Syu".to_string(), "--noconfirm".to_string()],
             "Starting system update...",
             "✓ System update completed successfully!",
             "System Update"
+        );
+    }
+
+    pub fn start_install_official(&mut self, packages: &[String]) {
+        // Extract package names from "repository/package" format
+        let package_names: Vec<String> = packages
+            .iter()
+            .map(|p| {
+                if let Some(idx) = p.rfind('/') {
+                    p[idx + 1..].to_string()
+                } else {
+                    p.clone()
+                }
+            })
+            .collect();
+
+        let mut args = vec!["pacman".to_string(), "-S".to_string(), "--noconfirm".to_string()];
+        args.extend(package_names);
+
+        self.start_command(
+            "pkexec".to_string(),
+            args,
+            &format!("Installing {} official package(s)...", packages.len()),
+            "✓ Installation completed successfully!",
+            "Installing Official Packages"
         );
     }
 
@@ -121,7 +152,15 @@ impl SystemUpdateWindow {
             })
             .collect();
 
-        let mut args = vec!["-S".to_string(), "--noconfirm".to_string()];
+        let mut args = vec![
+            "-S".to_string(),
+            "--noconfirm".to_string(),
+            "--answerdiff".to_string(), "None".to_string(),
+            "--answerclean".to_string(), "None".to_string(),
+            "--answeredit".to_string(), "None".to_string(),
+            "--answerupgrade".to_string(), "None".to_string(),
+            "--removemake".to_string(),
+        ];
         args.extend(package_names);
 
         self.start_command(
@@ -134,11 +173,23 @@ impl SystemUpdateWindow {
     }
 
     pub fn start_remove(&mut self, packages: &[String]) {
-        let mut args = vec!["-Rns".to_string(), "--noconfirm".to_string()];
-        args.extend(packages.iter().map(|p| p.clone()));
+        // Extract package names from "repository/package" format
+        let package_names: Vec<String> = packages
+            .iter()
+            .map(|p| {
+                if let Some(idx) = p.rfind('/') {
+                    p[idx + 1..].to_string()
+                } else {
+                    p.clone()
+                }
+            })
+            .collect();
+
+        let mut args = vec!["pacman".to_string(), "-Rns".to_string(), "--noconfirm".to_string()];
+        args.extend(package_names);
 
         self.start_command(
-            "yay".to_string(),
+            "pkexec".to_string(),
             args,
             &format!("Removing {} package(s)...", packages.len()),
             "✓ Removal completed successfully!",
@@ -166,16 +217,18 @@ impl SystemUpdateWindow {
         self.completed && !self.has_error
     }
 
-    pub fn close(&mut self) {
+    pub fn close(&mut self, cancelled_by_user: bool) {
         self.active = false;
         self.output.clear();
         self.completed = false;
         self.has_error = false;
         self.rx = None;
         self.just_closed = true;
+        self.cancelled_by_user = cancelled_by_user;
     }
 
     pub fn clear_just_closed_flag(&mut self) {
         self.just_closed = false;
+        self.cancelled_by_user = false;
     }
 }

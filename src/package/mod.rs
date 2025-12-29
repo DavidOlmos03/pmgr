@@ -124,6 +124,42 @@ impl PackageManager {
         Ok(())
     }
 
+    /// Check if a package is from AUR (not in official repos)
+    pub fn is_aur_package(&self, package: &str) -> bool {
+        // Extract package name from "repository/package" format
+        let pkg_name = if let Some(idx) = package.rfind('/') {
+            &package[idx + 1..]
+        } else {
+            package
+        };
+
+        // Try to get info from official repos using pacman
+        // If it succeeds, it's an official package. If it fails, it's AUR.
+        Command::new("pacman")
+            .args(["-Si", pkg_name])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|status| !status.success()) // If pacman -Si fails, it's AUR
+            .unwrap_or(true) // On error, assume AUR
+    }
+
+    /// Separate packages into AUR and official repos
+    pub fn separate_packages(&self, packages: &[String]) -> (Vec<String>, Vec<String>) {
+        let mut aur_packages = Vec::new();
+        let mut official_packages = Vec::new();
+
+        for pkg in packages {
+            if self.is_aur_package(pkg) {
+                aur_packages.push(pkg.clone());
+            } else {
+                official_packages.push(pkg.clone());
+            }
+        }
+
+        (aur_packages, official_packages)
+    }
+
     /// Remove packages
     pub fn remove(&self, packages: &[String]) -> Result<()> {
         if packages.is_empty() {

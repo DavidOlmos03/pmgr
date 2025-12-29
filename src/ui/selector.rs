@@ -27,7 +27,7 @@ fn run_app<B: ratatui::backend::Backend>(
 
         // Auto-close update window if completed successfully
         if app.update_window.should_auto_close() {
-            app.update_window.close();
+            app.update_window.close(false); // Not cancelled by user
         }
 
         // Clear terminal if window was just closed to force full redraw
@@ -48,7 +48,7 @@ fn run_app<B: ratatui::backend::Backend>(
                     match (key.code, key.modifiers) {
                         (KeyCode::Char('x'), KeyModifiers::ALT) => {
                             if app.update_window.has_error || app.update_window.completed {
-                                app.update_window.close();
+                                app.update_window.close(true); // Cancelled by user
                             }
                         }
                         _ => {} // Ignore other keys while update window is active

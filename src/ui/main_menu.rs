@@ -13,7 +13,6 @@ use crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, layout::{Constraint, Direction, Layout}, Terminal};
 use std::io;
-use std::process::Command;
 use std::time::Duration;
 
 /// Actions that can be requested during event handling
@@ -155,50 +154,9 @@ impl MainMenu {
                         }
                         // System update with Ctrl+U
                         (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
-                            // Check if we're in a package view
-                            let should_update = matches!(self.current_view, ViewState::Install(_) | ViewState::Remove(_) | ViewState::List(_));
-
-                            if should_update {
-                                // Exit TUI and run update interactively
-                                disable_raw_mode()?;
-                                execute!(
-                                    io::stdout(),
-                                    LeaveAlternateScreen,
-                                    DisableMouseCapture
-                                )?;
-
-                                // Run system update interactively
-                                let result = self.run_update_interactive();
-
-                                // Wait for user to press Enter
-                                println!("\nPress Enter to continue...");
-                                let mut input = String::new();
-                                let _ = io::stdin().read_line(&mut input);
-
-                                // Re-enter TUI
-                                enable_raw_mode()?;
-                                execute!(
-                                    io::stdout(),
-                                    EnterAlternateScreen,
-                                    EnableMouseCapture
-                                )?;
-                                terminal.clear()?;
-
-                                // Show alert based on result
-                                if let ViewState::Install(app) | ViewState::Remove(app) | ViewState::List(app) = &mut self.current_view {
-                                    match result {
-                                        Ok(success) => {
-                                            if success {
-                                                app.alert.show(super::types::AlertType::Success, "✓ System updated successfully".to_string());
-                                            } else {
-                                                app.alert.show(super::types::AlertType::Error, "✗ System update failed".to_string());
-                                            }
-                                        }
-                                        Err(e) => {
-                                            app.alert.show(super::types::AlertType::Error, format!("✗ Error: {}", e));
-                                        }
-                                    }
-                                }
+                            // Start system update with pkexec (polkit will handle authentication)
+                            if let ViewState::Install(app) | ViewState::Remove(app) | ViewState::List(app) = &mut self.current_view {
+                                app.update_window.start_update();
                             }
                             true
                         }
@@ -214,12 +172,18 @@ impl MainMenu {
 
                             // Auto-close update window if completed successfully
                             if app.update_window.should_auto_close() {
-                                app.update_window.close();
+                                app.update_window.close(false); // Not cancelled by user
                             }
 
                             // Clear terminal if window was just closed
                             if app.update_window.just_closed {
                                 terminal.clear()?;
+
+                                // Show alert if cancelled by user
+                                if app.update_window.cancelled_by_user {
+                                    app.alert.show(super::types::AlertType::Info, "⚠ Operation cancelled by user".to_string());
+                                }
+
                                 app.update_window.clear_just_closed_flag();
                             }
                         }
@@ -233,7 +197,7 @@ impl MainMenu {
                             match (key.code, key.modifiers) {
                                 (KeyCode::Char('x'), KeyModifiers::ALT) => {
                                     if app.update_window.has_error || app.update_window.completed {
-                                        app.update_window.close();
+                                        app.update_window.close(true); // Cancelled by user
                                     }
                                 }
                                 _ => {} // Ignore other keys while update window is active
@@ -431,67 +395,98 @@ impl MainMenu {
                 }
             }
 
-            // Check if confirmation dialog was confirmed (outside event loop so it's immediate)
-            let mut pending_operation: Option<(ActionType, Vec<String>)> = None;
+            // Check if confirmation dialog was confirmed and start operation
             if let ViewState::Install(app) | ViewState::Remove(app) | ViewState::List(app) = &mut self.current_view {
                 if app.confirm_dialog.is_confirmed() {
-                    pending_operation = Some((app.action_type, app.confirm_dialog.packages.clone()));
-                    app.confirm_dialog.cancel(); // Reset dialog
+                    let packages = app.confirm_dialog.packages.clone();
+                    let action_type = app.action_type;
+
+                    // Reset confirmation dialog first
+                    app.confirm_dialog.cancel();
+
+                    match action_type {
+                        ActionType::Install => {
+                            // Separate AUR vs official packages
+                            let (aur_packages, official_packages) = self.package_manager.separate_packages(&packages);
+
+                            // Handle official packages first (if any) using pkexec within TUI
+                            if !official_packages.is_empty() {
+                                app.update_window.start_install_official(&official_packages);
+                            }
+
+                            // Handle AUR packages using handoff (exit TUI, run yay, return)
+                            if !aur_packages.is_empty() {
+                                // Exit TUI for handoff
+                                disable_raw_mode()?;
+                                execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
+
+                                println!("\n📦 Installing {} AUR package(s) with yay...\n", aur_packages.len());
+
+                                // Extract package names
+                                let pkg_names: Vec<String> = aur_packages
+                                    .iter()
+                                    .map(|p| {
+                                        if let Some(idx) = p.rfind('/') {
+                                            p[idx + 1..].to_string()
+                                        } else {
+                                            p.clone()
+                                        }
+                                    })
+                                    .collect();
+
+                                // Run yay with full control (handoff)
+                                let result = std::process::Command::new("yay")
+                                    .arg("-S")
+                                    .args(&pkg_names)
+                                    .stdin(std::process::Stdio::inherit())
+                                    .stdout(std::process::Stdio::inherit())
+                                    .stderr(std::process::Stdio::inherit())
+                                    .status();
+
+                                println!("\nPress Enter to return to pmgr...");
+                                let mut input = String::new();
+                                let _ = io::stdin().read_line(&mut input);
+
+                                // Re-enter TUI
+                                enable_raw_mode()?;
+                                execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
+                                terminal.clear()?;
+
+                                // Show result
+                                match result {
+                                    Ok(status) if status.success() => {
+                                        app.alert.show(super::types::AlertType::Success,
+                                            format!("✓ Successfully installed {} AUR package(s)", aur_packages.len()));
+                                    }
+                                    _ => {
+                                        app.alert.show(super::types::AlertType::Error,
+                                            "✗ AUR installation failed or was cancelled".to_string());
+                                    }
+                                }
+
+                                // Clear cache and refresh
+                                self.cached_installed = None;
+                                self.refresh_current_view()?;
+                            }
+                        }
+                        ActionType::Remove => {
+                            // For remove, use pkexec pacman directly (works for both AUR and official)
+                            app.update_window.start_remove(&packages);
+                        }
+                    }
                 }
             }
 
-            // Execute pending operation if any
-            if let Some((action_type, packages)) = pending_operation {
-                // Exit TUI and run command interactively
-                disable_raw_mode()?;
-                execute!(io::stdout(), LeaveAlternateScreen)?;
-
-                let result = match action_type {
-                    ActionType::Install => self.run_install_interactive(&packages),
-                    ActionType::Remove => self.run_remove_interactive(&packages),
-                };
-
-                // Wait for user to press Enter
-                println!("\nPress Enter to continue...");
-                let mut input = String::new();
-                let _ = io::stdin().read_line(&mut input);
-
-                // Re-enter TUI
-                enable_raw_mode()?;
-                execute!(io::stdout(), EnterAlternateScreen)?;
-                terminal.clear()?;
-
-                // Prepare alert message based on result
-                let alert_to_show = match result {
-                    Ok(success) => {
-                        if success {
-                            let message = match action_type {
-                                ActionType::Install => format!("✓ Successfully installed {} package(s)", packages.len()),
-                                ActionType::Remove => format!("✓ Successfully removed {} package(s)", packages.len()),
-                            };
-                            Some((super::types::AlertType::Success, message))
-                        } else {
-                            let message = match action_type {
-                                ActionType::Install => "✗ Installation failed".to_string(),
-                                ActionType::Remove => "✗ Removal failed".to_string(),
-                            };
-                            Some((super::types::AlertType::Error, message))
-                        }
-                    }
-                    Err(e) => {
-                        Some((super::types::AlertType::Error, format!("✗ Error: {}", e)))
-                    }
-                };
-
-                // Clear cache for refresh after operation completes
-                self.cached_installed = None;
-                // Refresh the current view (this creates a new App)
-                self.refresh_current_view()?;
-
-                // Show alert after refresh (so it persists in the new App)
-                if let Some((alert_type, message)) = alert_to_show {
-                    if let ViewState::Install(app) | ViewState::Remove(app) | ViewState::List(app) = &mut self.current_view {
-                        app.alert.show(alert_type, message);
+            // Check if update_window just completed successfully
+            if let ViewState::Install(app) | ViewState::Remove(app) | ViewState::List(app) = &mut self.current_view {
+                // If window was just closed after successful operation, refresh the view
+                if app.update_window.just_closed {
+                    // Clear cache to force refresh
+                    self.cached_installed = None;
+                    // Refresh will happen in the next iteration
+                    let should_refresh = true;
+                    if should_refresh {
+                        self.refresh_current_view()?;
                     }
                 }
             }
@@ -507,13 +502,19 @@ impl MainMenu {
 
                 // Auto-close update window if completed successfully
                 if app.update_window.should_auto_close() {
-                    app.update_window.close();
+                    app.update_window.close(false); // Not cancelled by user
                     need_view_refresh = true; // Refresh view after successful operation
                 }
 
                 // Clear terminal if window was just closed to force full redraw
                 if app.update_window.just_closed {
                     terminal.clear()?;
+
+                    // Show alert if cancelled by user
+                    if app.update_window.cancelled_by_user {
+                        app.alert.show(super::types::AlertType::Info, "⚠ Operation cancelled by user".to_string());
+                    }
+
                     app.update_window.clear_just_closed_flag();
                 }
             }
@@ -650,55 +651,5 @@ impl MainMenu {
             _ => {}
         }
         Ok(())
-    }
-
-    /// Run install command interactively (outside TUI)
-    fn run_install_interactive(&self, packages: &[String]) -> Result<bool> {
-        // Extract package names from "repository/package" format
-        let package_names: Vec<String> = packages
-            .iter()
-            .map(|p| {
-                if let Some(idx) = p.rfind('/') {
-                    p[idx + 1..].to_string()
-                } else {
-                    p.clone()
-                }
-            })
-            .collect();
-
-        println!("Installing {} package(s)...", packages.len());
-        println!("Packages: {}\n", package_names.join(", "));
-
-        let status = Command::new("yay")
-            .arg("-S")
-            .args(&package_names)
-            .status()?;
-
-        Ok(status.success())
-    }
-
-    /// Run remove command interactively (outside TUI)
-    fn run_remove_interactive(&self, packages: &[String]) -> Result<bool> {
-        println!("Removing {} package(s)...", packages.len());
-        println!("Packages: {}\n", packages.join(", "));
-
-        let status = Command::new("yay")
-            .arg("-Rns")
-            .args(packages)
-            .status()?;
-
-        Ok(status.success())
-    }
-
-    /// Run system update interactively (outside TUI)
-    fn run_update_interactive(&self) -> Result<bool> {
-        println!("Running system update...\n");
-
-        let status = Command::new("sudo")
-            .arg("pacman")
-            .arg("-Syu")
-            .status()?;
-
-        Ok(status.success())
     }
 }

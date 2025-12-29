@@ -156,12 +156,19 @@ fn render_update_window(f: &mut Frame, app: &mut App, palette: &ThemePalette) {
 
     let title = if app.update_window.completed {
         if app.update_window.has_error {
-            format!(" {} - FAILED (Alt+X to close) ", base_title)
+            format!(" {} - FAILED ", base_title)
         } else {
-            format!(" {} - COMPLETED (closing...) ", base_title)
+            format!(" {} - COMPLETED ", base_title)
         }
     } else {
         format!(" {} - Running... ", base_title)
+    };
+
+    // Footer with keybinding - visible and prominent
+    let footer = if app.update_window.completed || app.update_window.has_error {
+        " Press Alt+X to close "
+    } else {
+        " Running... Alt+X available after completion "
     };
 
     let border_color = if app.update_window.completed {
@@ -177,7 +184,9 @@ fn render_update_window(f: &mut Frame, app: &mut App, palette: &ThemePalette) {
     let update_block = Block::default()
         .borders(Borders::ALL)
         .title(title)
-        .style(Style::default().fg(border_color));
+        .title_bottom(footer)
+        .title_style(Style::default().fg(border_color).bold())
+        .border_style(Style::default().fg(border_color));
 
     // Calculate how many lines we can show (subtract 2 for borders)
     let content_height = overlay_height.saturating_sub(2) as usize;
