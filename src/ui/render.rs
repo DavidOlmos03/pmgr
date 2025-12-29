@@ -1,4 +1,5 @@
 use super::app::App;
+use super::theme::ThemePalette;
 use super::types::{ActionType, AlertType, PreviewLayout};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -8,11 +9,11 @@ use ratatui::{
     Frame,
 };
 
-pub fn ui(f: &mut Frame, app: &mut App, prompt: &str) {
-    ui_in_area(f, app, prompt, f.area());
+pub fn ui(f: &mut Frame, app: &mut App, prompt: &str, palette: &ThemePalette) {
+    ui_in_area(f, app, prompt, f.area(), palette);
 }
 
-pub fn ui_in_area(f: &mut Frame, app: &mut App, prompt: &str, area: Rect) {
+pub fn ui_in_area(f: &mut Frame, app: &mut App, prompt: &str, area: Rect, palette: &ThemePalette) {
     let chunks = match app.layout {
         PreviewLayout::Vertical => Layout::default()
             .direction(Direction::Horizontal)
@@ -38,11 +39,11 @@ pub fn ui_in_area(f: &mut Frame, app: &mut App, prompt: &str, area: Rect) {
     let search_block = Block::default()
         .borders(Borders::ALL)
         .title(prompt)
-        .style(Style::default().fg(Color::Cyan));
+        .style(Style::default().fg(palette.primary));
 
     let search_text = Paragraph::new(app.search_query.as_str())
         .block(search_block)
-        .style(Style::default().fg(Color::Yellow));
+        .style(Style::default().fg(palette.secondary));
 
     f.render_widget(search_text, list_chunks[0]);
 
@@ -72,7 +73,7 @@ pub fn ui_in_area(f: &mut Frame, app: &mut App, prompt: &str, area: Rect) {
             Block::default()
                 .borders(Borders::ALL)
                 .title(format!(" {} items ", app.filtered_items.len()))
-                .style(Style::default().fg(Color::White)),
+                .style(Style::default().fg(palette.border)),
         )
         .highlight_style(
             Style::default()
@@ -88,7 +89,7 @@ pub fn ui_in_area(f: &mut Frame, app: &mut App, prompt: &str, area: Rect) {
 
     let footer = Paragraph::new(footer_text)
         .block(Block::default().borders(Borders::ALL))
-        .style(Style::default().fg(Color::Cyan));
+        .style(Style::default().fg(palette.primary));
 
     f.render_widget(footer, list_chunks[2]);
 
@@ -97,38 +98,38 @@ pub fn ui_in_area(f: &mut Frame, app: &mut App, prompt: &str, area: Rect) {
         let preview_block = Block::default()
             .borders(Borders::ALL)
             .title(" Preview ")
-            .style(Style::default().fg(Color::Green));
+            .style(Style::default().fg(palette.preview_border));
 
         let preview = Paragraph::new(app.preview_content.clone())
             .block(preview_block)
             .wrap(Wrap { trim: false })
-            .style(Style::default().fg(Color::White));
+            .style(Style::default().fg(palette.text_primary));
 
         f.render_widget(preview, chunks[1]);
     }
 
     // System update overlay window
     if app.update_window.active {
-        render_update_window(f, app);
+        render_update_window(f, app, palette);
     }
 
     // Help screen overlay
     if app.help_visible {
-        render_help_window(f, app);
+        render_help_window(f, app, palette);
     }
 
     // Confirmation dialog overlay
     if app.confirm_dialog.active {
-        render_confirm_dialog(f, app);
+        render_confirm_dialog(f, app, palette);
     }
 
     // Alert overlay (rendered last so it appears on top)
     if app.alert.active {
-        render_alert(f, app);
+        render_alert(f, app, palette);
     }
 }
 
-fn render_update_window(f: &mut Frame, app: &mut App) {
+fn render_update_window(f: &mut Frame, app: &mut App, palette: &ThemePalette) {
     // Create a centered overlay area (80% width, 80% height)
     let area = f.area();
     let overlay_width = (area.width as f32 * 0.8) as u16;
@@ -165,12 +166,12 @@ fn render_update_window(f: &mut Frame, app: &mut App) {
 
     let border_color = if app.update_window.completed {
         if app.update_window.has_error {
-            Color::Red
+            palette.error
         } else {
-            Color::Green
+            palette.success
         }
     } else {
-        Color::Yellow
+        palette.warning
     };
 
     let update_block = Block::default()
@@ -236,12 +237,12 @@ fn render_update_window(f: &mut Frame, app: &mut App) {
     let update_content = Paragraph::new(output_text)
         .block(update_block)
         .wrap(Wrap { trim: false })
-        .style(Style::default().fg(Color::White));
+        .style(Style::default().fg(palette.text_primary));
 
     f.render_widget(update_content, overlay_area);
 }
 
-fn render_help_window(f: &mut Frame, app: &mut App) {
+fn render_help_window(f: &mut Frame, app: &mut App, palette: &ThemePalette) {
     // Create a centered overlay area - responsive sizing
     let area = f.area();
 
@@ -269,7 +270,7 @@ fn render_help_window(f: &mut Frame, app: &mut App) {
     let help_block = Block::default()
         .borders(Borders::ALL)
         .title(" Help - Press '?' or ESC to close | ↑/↓ to scroll ")
-        .style(Style::default().fg(Color::Cyan));
+        .style(Style::default().fg(palette.primary));
 
     // Split into title area and content area
     let inner_area = help_block.inner(overlay_area);
@@ -289,17 +290,17 @@ fn render_help_window(f: &mut Frame, app: &mut App) {
     let title_lines = vec![
         Line::from(""),
         Line::from(vec![
-            Span::styled("PMGR - Package Manager", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+            Span::styled("PMGR - Package Manager", Style::default().fg(palette.primary).add_modifier(Modifier::BOLD))
         ]),
         Line::from(vec![
-            Span::styled("Keyboard Shortcuts", Style::default().fg(Color::Cyan))
+            Span::styled("Keyboard Shortcuts", Style::default().fg(palette.primary))
         ]),
         Line::from(""),
     ];
 
     let title_widget = Paragraph::new(title_lines)
         .alignment(Alignment::Center)
-        .style(Style::default().fg(Color::White));
+        .style(Style::default().fg(palette.text_primary));
 
     f.render_widget(title_widget, main_chunks[0]);
 
@@ -319,20 +320,20 @@ fn render_help_window(f: &mut Frame, app: &mut App) {
         // Left column content
         let left_content = vec![
             Line::from(vec![
-                Span::styled("NAVIGATION", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+                Span::styled("NAVIGATION", Style::default().fg(palette.help_section).add_modifier(Modifier::BOLD))
             ]),
             Line::from("  ↑ / k        Move up in list"),
             Line::from("  ↓ / j        Move down in list"),
             Line::from(""),
             Line::from(vec![
-                Span::styled("SELECTION & ACTIONS", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+                Span::styled("SELECTION & ACTIONS", Style::default().fg(palette.help_section).add_modifier(Modifier::BOLD))
             ]),
             Line::from("  TAB          Toggle selection"),
             Line::from("  ENTER        Confirm selection"),
             Line::from("  ESC          Cancel and exit"),
             Line::from(""),
             Line::from(vec![
-                Span::styled("SEARCH", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+                Span::styled("SEARCH", Style::default().fg(palette.help_section).add_modifier(Modifier::BOLD))
             ]),
             Line::from("  Type         Filter packages"),
             Line::from("  Backspace    Delete character"),
@@ -342,23 +343,24 @@ fn render_help_window(f: &mut Frame, app: &mut App) {
         // Right column content
         let right_content = vec![
             Line::from(vec![
-                Span::styled("LAYOUT", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+                Span::styled("LAYOUT", Style::default().fg(palette.help_section).add_modifier(Modifier::BOLD))
             ]),
             Line::from("  Alt+O        Horizontal layout"),
             Line::from("  Alt+V        Vertical layout"),
             Line::from(""),
             Line::from(vec![
-                Span::styled("SYSTEM", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+                Span::styled("SYSTEM", Style::default().fg(palette.help_section).add_modifier(Modifier::BOLD))
             ]),
             Line::from("  Ctrl+U       Update system"),
+            Line::from("  Ctrl+T       Change theme"),
             Line::from(""),
             Line::from(vec![
-                Span::styled("HELP", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+                Span::styled("HELP", Style::default().fg(palette.help_section).add_modifier(Modifier::BOLD))
             ]),
             Line::from("  ?            Show/hide help"),
             Line::from(""),
             Line::from(vec![
-                Span::styled("TIPS", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
+                Span::styled("TIPS", Style::default().fg(palette.success).add_modifier(Modifier::BOLD))
             ]),
             Line::from("• Fuzzy search available"),
             Line::from("• Multi-select with TAB"),
@@ -368,11 +370,11 @@ fn render_help_window(f: &mut Frame, app: &mut App) {
 
         let left_para = Paragraph::new(left_content)
             .scroll((app.help_scroll, 0))
-            .style(Style::default().fg(Color::White));
+            .style(Style::default().fg(palette.text_primary));
 
         let right_para = Paragraph::new(right_content)
             .scroll((app.help_scroll, 0))
-            .style(Style::default().fg(Color::White));
+            .style(Style::default().fg(palette.text_primary));
 
         f.render_widget(left_para, columns[0]);
         f.render_widget(right_para, columns[1]);
@@ -380,37 +382,38 @@ fn render_help_window(f: &mut Frame, app: &mut App) {
         // Single column layout for narrow screens
         let content = vec![
             Line::from(vec![
-                Span::styled("NAVIGATION", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+                Span::styled("NAVIGATION", Style::default().fg(palette.help_section).add_modifier(Modifier::BOLD))
             ]),
             Line::from("  ↑ / k        Move up in list"),
             Line::from("  ↓ / j        Move down in list"),
             Line::from(""),
             Line::from(vec![
-                Span::styled("SELECTION", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+                Span::styled("SELECTION", Style::default().fg(palette.help_section).add_modifier(Modifier::BOLD))
             ]),
             Line::from("  TAB          Toggle selection"),
             Line::from("  ENTER        Confirm"),
             Line::from("  ESC          Cancel"),
             Line::from(""),
             Line::from(vec![
-                Span::styled("SEARCH", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+                Span::styled("SEARCH", Style::default().fg(palette.help_section).add_modifier(Modifier::BOLD))
             ]),
             Line::from("  Type         Filter"),
             Line::from("  Backspace    Delete"),
             Line::from(""),
             Line::from(vec![
-                Span::styled("LAYOUT", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+                Span::styled("LAYOUT", Style::default().fg(palette.help_section).add_modifier(Modifier::BOLD))
             ]),
             Line::from("  Alt+O        Horizontal"),
             Line::from("  Alt+V        Vertical"),
             Line::from(""),
             Line::from(vec![
-                Span::styled("SYSTEM", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+                Span::styled("SYSTEM", Style::default().fg(palette.help_section).add_modifier(Modifier::BOLD))
             ]),
             Line::from("  Ctrl+U       Update"),
+            Line::from("  Ctrl+T       Theme"),
             Line::from(""),
             Line::from(vec![
-                Span::styled("HELP", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+                Span::styled("HELP", Style::default().fg(palette.help_section).add_modifier(Modifier::BOLD))
             ]),
             Line::from("  ?            Toggle help"),
             Line::from(""),
@@ -418,13 +421,13 @@ fn render_help_window(f: &mut Frame, app: &mut App) {
 
         let para = Paragraph::new(content)
             .scroll((app.help_scroll, 0))
-            .style(Style::default().fg(Color::White));
+            .style(Style::default().fg(palette.text_primary));
 
         f.render_widget(para, main_chunks[1]);
     }
 }
 
-fn render_confirm_dialog(f: &mut Frame, app: &App) {
+fn render_confirm_dialog(f: &mut Frame, app: &App, palette: &ThemePalette) {
     // Create a responsive centered dialog
     let area = f.area();
 
@@ -485,11 +488,11 @@ fn render_confirm_dialog(f: &mut Frame, app: &App) {
     let (title_text, border_color) = match app.confirm_dialog.action_type {
         ActionType::Install => (
             " Confirm Installation ",
-            Color::Green,
+            palette.success,
         ),
         ActionType::Remove => (
             " Confirm Removal ",
-            Color::Red,
+            palette.error,
         ),
     };
 
@@ -531,7 +534,7 @@ fn render_confirm_dialog(f: &mut Frame, app: &App) {
         ActionType::Remove => "The following packages will be removed:",
     };
     package_lines.push(Line::from(vec![
-        Span::styled(action_msg, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+        Span::styled(action_msg, Style::default().fg(palette.help_section).add_modifier(Modifier::BOLD))
     ]));
     package_lines.push(Line::from(""));
 
@@ -547,7 +550,7 @@ fn render_confirm_dialog(f: &mut Frame, app: &App) {
 
         package_lines.push(Line::from(vec![
             Span::raw("  • "),
-            Span::styled(pkg_display, Style::default().fg(Color::Cyan))
+            Span::styled(pkg_display, Style::default().fg(palette.primary))
         ]));
     }
 
@@ -557,7 +560,7 @@ fn render_confirm_dialog(f: &mut Frame, app: &App) {
     let package_list = Paragraph::new(package_lines)
         .scroll((app.confirm_dialog.scroll, 0))
         .alignment(Alignment::Left)
-        .style(Style::default().fg(Color::White));
+        .style(Style::default().fg(palette.text_primary));
 
     f.render_widget(package_list, chunks[0]);
 
@@ -573,50 +576,50 @@ fn render_confirm_dialog(f: &mut Frame, app: &App) {
 
     // Confirmation prompt with icon
     button_lines.push(Line::from(vec![
-        Span::styled("", Style::default().fg(Color::Yellow)), // Question icon
+        Span::styled("", Style::default().fg(palette.warning)), // Question icon
         Span::raw(" "),
-        Span::styled("Do you want to continue?", Style::default().fg(Color::White).add_modifier(Modifier::BOLD))
+        Span::styled("Do you want to continue?", Style::default().fg(palette.text_primary).add_modifier(Modifier::BOLD))
     ]));
     button_lines.push(Line::from(""));
 
     // Buttons with box drawing and icons
     button_lines.push(Line::from(vec![
-        Span::styled("┌───────────┐", Style::default().fg(Color::Green)),
+        Span::styled("┌───────────┐", Style::default().fg(palette.success)),
         Span::raw("  "),
-        Span::styled("┌────────────┐", Style::default().fg(Color::Red)),
+        Span::styled("┌────────────┐", Style::default().fg(palette.error)),
     ]));
     button_lines.push(Line::from(vec![
-        Span::styled("│ ", Style::default().fg(Color::Green)),
-        Span::styled("✓ ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)), // Checkmark icon
-        Span::styled("Y", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-        Span::styled(" - Yes │", Style::default().fg(Color::Green)),
+        Span::styled("│ ", Style::default().fg(palette.success)),
+        Span::styled("✓ ", Style::default().fg(palette.success).add_modifier(Modifier::BOLD)), // Checkmark icon
+        Span::styled("Y", Style::default().fg(palette.success).add_modifier(Modifier::BOLD)),
+        Span::styled(" - Yes │", Style::default().fg(palette.success)),
         Span::raw("  "),
-        Span::styled("│ ", Style::default().fg(Color::Red)),
-        Span::styled("✗ ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)), // X icon
-        Span::styled("N", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-        Span::styled(" - No   │", Style::default().fg(Color::Red)),
+        Span::styled("│ ", Style::default().fg(palette.error)),
+        Span::styled("✗ ", Style::default().fg(palette.error).add_modifier(Modifier::BOLD)), // X icon
+        Span::styled("N", Style::default().fg(palette.error).add_modifier(Modifier::BOLD)),
+        Span::styled(" - No   │", Style::default().fg(palette.error)),
     ]));
     button_lines.push(Line::from(vec![
-        Span::styled("└───────────┘", Style::default().fg(Color::Green)),
+        Span::styled("└───────────┘", Style::default().fg(palette.success)),
         Span::raw("  "),
-        Span::styled("└────────────┘", Style::default().fg(Color::Red)),
+        Span::styled("└────────────┘", Style::default().fg(palette.error)),
     ]));
     button_lines.push(Line::from(vec![
-        Span::styled(" ", Style::default().fg(Color::Gray)), // Keyboard icon
+        Span::styled(" ", Style::default().fg(palette.text_secondary)), // Keyboard icon
         Span::raw(" Press "),
-        Span::styled("ESC", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        Span::styled("ESC", Style::default().fg(palette.error).add_modifier(Modifier::BOLD)),
         Span::raw(" to cancel"),
     ]));
 
     let buttons = Paragraph::new(button_lines)
         .alignment(Alignment::Center)
-        .style(Style::default().fg(Color::White));
+        .style(Style::default().fg(palette.text_primary));
 
     f.render_widget(buttons, chunks[1]);
 }
 
 /// Render tab bar at the top of the screen
-pub fn render_tab_bar(f: &mut Frame, area: Rect, selected_tab: usize) {
+pub fn render_tab_bar(f: &mut Frame, area: Rect, selected_tab: usize, palette: &ThemePalette) {
     use super::types::ViewType;
 
     let tabs = vec![
@@ -635,11 +638,11 @@ pub fn render_tab_bar(f: &mut Frame, area: Rect, selected_tab: usize) {
 
         let style = if *tab_idx == selected_tab {
             Style::default()
-                .fg(Color::Cyan)
+                .fg(palette.tab_active)
                 .add_modifier(Modifier::BOLD)
                 //.bg(Color::DarkGray)
         } else {
-            Style::default().fg(Color::White)
+            Style::default().fg(palette.tab_inactive)
         };
 
         tab_spans.push(Span::styled(*label, style));
@@ -653,13 +656,13 @@ pub fn render_tab_bar(f: &mut Frame, area: Rect, selected_tab: usize) {
 }
 
 /// Render the home view
-pub fn render_home_view(f: &mut Frame, area: Rect, home_state: &super::home_state::HomeState) {
+pub fn render_home_view(f: &mut Frame, area: Rect, home_state: &super::home_state::HomeState, palette: &ThemePalette) {
     // Create centered content area
     let block = Block::default()
         .borders(Borders::ALL)
         .title(" PMGR - Package Manager ")
         .title_alignment(Alignment::Center)
-        .style(Style::default().fg(Color::Cyan));
+        .style(Style::default().fg(palette.primary));
 
     let inner_area = block.inner(area);
     f.render_widget(block, area);
@@ -678,51 +681,51 @@ pub fn render_home_view(f: &mut Frame, area: Rect, home_state: &super::home_stat
     title_lines.push(Line::from(""));
     title_lines.push(Line::from(Span::styled(
         "  ______   _____    ___________",
-        Style::default().fg(Color::Rgb(210, 215, 255)),
+        Style::default().fg(palette.ascii_art_1),
     )));
     title_lines.push(Line::from(Span::styled(
         "   \\____ \\ /     \\  / ___\\_  __ \\",
-        Style::default().fg(Color::Rgb(200, 205, 245)),
+        Style::default().fg(palette.ascii_art_2),
     )));
     title_lines.push(Line::from(Span::styled(
         "   |  |_> >  Y Y  \\/ /_/  >  | \\/",
-        Style::default().fg(Color::Rgb(190, 195, 235)),
+        Style::default().fg(palette.ascii_art_3),
     )));
     title_lines.push(Line::from(Span::styled(
         " |   __/|__|_|  /\\___  /|__| ",
-        Style::default().fg(Color::Rgb(175, 180, 220)),
+        Style::default().fg(palette.ascii_art_4),
     )));
     title_lines.push(Line::from(Span::styled(
         "|__|         \\//_____/    ",
-        Style::default().fg(Color::Rgb(165, 170, 210)),
+        Style::default().fg(palette.ascii_art_5),
     )));
     title_lines.push(Line::from(""));
     title_lines.push(Line::from(vec![
-        "Modern package manager ".fg(Color::Cyan),
-        "for Arch Linux".yellow().italic(),
+        "Modern package manager ".fg(palette.primary),
+        "for Arch Linux".fg(palette.secondary).italic(),
     ]));
     title_lines.push(Line::from(
         ratatui::symbols::line::HORIZONTAL
             .repeat(50)
-            .fg(Color::Rgb(100, 100, 100)),
+            .fg(palette.text_dim),
     ));
     title_lines.push(Line::from(
     env!("CARGO_PKG_REPOSITORY")
         .italic()
-        .fg(Color::Gray),
+        .fg(palette.text_secondary),
     ));
     title_lines.push(Line::from(vec![
-        "[".fg(Color::Rgb(100, 100, 100)),
+        "[".fg(palette.text_dim),
         "with ".into(),
-        "♥".cyan(),
+        "♥".fg(palette.primary),
         " by ".into(),
-        "@DavidOlmos03".cyan(),
-        "]".fg(Color::Rgb(100, 100, 100)),
+        "@DavidOlmos03".fg(palette.primary),
+        "]".fg(palette.text_dim),
     ]));
 
     let title_widget = Paragraph::new(title_lines)
         .alignment(Alignment::Center)
-        .style(Style::default().fg(Color::White));
+        .style(Style::default().fg(palette.text_primary));
 
     f.render_widget(title_widget, main_chunks[0]);
 
@@ -739,38 +742,38 @@ pub fn render_home_view(f: &mut Frame, area: Rect, home_state: &super::home_stat
     // Create System Information section
     let mut sys_info_lines = vec![];
     sys_info_lines.push(Line::from(vec![
-        Span::styled("System Information", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+        Span::styled("System Information", Style::default().fg(palette.help_section).add_modifier(Modifier::BOLD))
     ]));
     sys_info_lines.push(Line::from(
         ratatui::symbols::line::HORIZONTAL
             .repeat(18)
-            .fg(Color::Rgb(100, 100, 100)),
+            .fg(palette.text_dim),
     ));
     sys_info_lines.push(Line::from(""));
 
     if let Some(ref stats) = home_state.stats {
         sys_info_lines.push(Line::from(vec![
-            "Installed".cyan(),
-            Span::raw(": ").fg(Color::Rgb(100, 100, 100)),
+            "Installed".fg(palette.primary),
+            Span::raw(": ").fg(palette.text_dim),
             Span::styled(
                 stats.installed_count.to_string(),
-                Style::default().fg(Color::Rgb(150, 255, 150))
+                Style::default().fg(palette.success)
             )
         ]));
         sys_info_lines.push(Line::from(vec![
-            "Available".cyan(),
-            Span::raw(": ").fg(Color::Rgb(100, 100, 100)),
+            "Available".fg(palette.primary),
+            Span::raw(": ").fg(palette.text_dim),
             Span::styled(
                 stats.available_count.to_string(),
-                Style::default().fg(Color::Rgb(150, 200, 255))
+                Style::default().fg(palette.info)
             )
         ]));
         sys_info_lines.push(Line::from(vec![
-            "Updates".cyan(),
-            Span::raw(": ").fg(Color::Rgb(100, 100, 100)),
+            "Updates".fg(palette.primary),
+            Span::raw(": ").fg(palette.text_dim),
             Span::styled(
                 format!("{}", stats.updates_available),
-                Style::default().fg(if stats.updates_available > 0 { Color::Rgb(255, 150, 150) } else { Color::Rgb(150, 255, 150) })
+                Style::default().fg(if stats.updates_available > 0 { palette.error } else { palette.success })
             )
         ]));
     } else {
@@ -780,64 +783,69 @@ pub fn render_home_view(f: &mut Frame, area: Rect, home_state: &super::home_stat
     // Create Quick Actions section
     let mut quick_actions_lines = vec![];
     quick_actions_lines.push(Line::from(vec![
-        Span::styled("Quick Actions", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+        Span::styled("Quick Actions", Style::default().fg(palette.help_section).add_modifier(Modifier::BOLD))
     ]));
     quick_actions_lines.push(Line::from(
         ratatui::symbols::line::HORIZONTAL
             .repeat(13)
-            .fg(Color::Rgb(100, 100, 100)),
+            .fg(palette.text_dim),
     ));
     quick_actions_lines.push(Line::from(""));
     quick_actions_lines.push(Line::from(vec![
-        "[1]".cyan(),
-        Span::raw(": ").fg(Color::Rgb(100, 100, 100)),
+        "[1]".fg(palette.primary),
+        Span::raw(": ").fg(palette.text_dim),
         "Install packages".into(),
     ]));
     quick_actions_lines.push(Line::from(vec![
-        "[2]".cyan(),
-        Span::raw(": ").fg(Color::Rgb(100, 100, 100)),
+        "[2]".fg(palette.primary),
+        Span::raw(": ").fg(palette.text_dim),
         "Remove packages".into(),
     ]));
     quick_actions_lines.push(Line::from(vec![
-        "[3]".cyan(),
-        Span::raw(": ").fg(Color::Rgb(100, 100, 100)),
+        "[3]".fg(palette.primary),
+        Span::raw(": ").fg(palette.text_dim),
         "List packages".into(),
     ]));
     quick_actions_lines.push(Line::from(vec![
-        "[Ctrl+U]".fg(Color::Magenta),
-        Span::raw(": ").fg(Color::Rgb(100, 100, 100)),
+        "[Ctrl+U]".fg(palette.warning),
+        Span::raw(": ").fg(palette.text_dim),
         "System update".into(),
     ]));
 
     // Create Keyboard Shortcuts section
     let mut shortcuts_lines = vec![];
     shortcuts_lines.push(Line::from(vec![
-        Span::styled("Keyboard Shortcuts", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+        Span::styled("Keyboard Shortcuts", Style::default().fg(palette.help_section).add_modifier(Modifier::BOLD))
     ]));
     shortcuts_lines.push(Line::from(
         ratatui::symbols::line::HORIZONTAL
             .repeat(18)
-            .fg(Color::Rgb(100, 100, 100)),
+            .fg(palette.text_dim),
     ));
     shortcuts_lines.push(Line::from(""));
     shortcuts_lines.push(Line::from(vec![
-        "1-4".cyan(),
-        Span::raw(": ").fg(Color::Rgb(100, 100, 100)),
+        "1-4".fg(palette.primary),
+        Span::raw(": ").fg(palette.text_dim),
         "Switch tabs".into(),
     ]));
     shortcuts_lines.push(Line::from(vec![
-        "?".cyan(),
-        Span::raw(": ").fg(Color::Rgb(100, 100, 100)),
+        "?".fg(palette.primary),
+        Span::raw(": ").fg(palette.text_dim),
         "Show help".into(),
     ]));
     shortcuts_lines.push(Line::from(vec![
-        "Ctrl+R".cyan(),
-        Span::raw(": ").fg(Color::Rgb(100, 100, 100)),
+        "Ctrl+R".fg(palette.primary),
+        Span::raw(": ").fg(palette.text_dim),
         "Refresh data".into(),
     ]));
     shortcuts_lines.push(Line::from(vec![
-        "ESC".fg(Color::Red),
-        Span::raw(": ").fg(Color::Rgb(100, 100, 100)),
+        "Ctrl+T".fg(palette.primary),
+        Span::raw(": ").fg(palette.text_dim),
+        "Change theme".into(),
+    ]));
+    shortcuts_lines.push(Line::from(vec![
+        "ESC".fg(palette.error),
+        Span::raw(": ").fg(palette.text_dim),
         "Exit".into(),
     ]));
 
@@ -855,15 +863,15 @@ pub fn render_home_view(f: &mut Frame, area: Rect, home_state: &super::home_stat
 
         let sys_info = Paragraph::new(sys_info_lines)
             .alignment(Alignment::Center)
-            .style(Style::default().fg(Color::White));
+            .style(Style::default().fg(palette.text_primary));
 
         let quick_actions = Paragraph::new(quick_actions_lines)
             .alignment(Alignment::Center)
-            .style(Style::default().fg(Color::White));
+            .style(Style::default().fg(palette.text_primary));
 
         let shortcuts = Paragraph::new(shortcuts_lines)
             .alignment(Alignment::Center)
-            .style(Style::default().fg(Color::White));
+            .style(Style::default().fg(palette.text_primary));
 
         f.render_widget(sys_info, columns[0]);
         f.render_widget(quick_actions, columns[1]);
@@ -881,7 +889,7 @@ pub fn render_home_view(f: &mut Frame, area: Rect, home_state: &super::home_stat
         // Left column: System Info
         let sys_info = Paragraph::new(sys_info_lines)
             .alignment(Alignment::Left)
-            .style(Style::default().fg(Color::White));
+            .style(Style::default().fg(palette.text_primary));
 
         // Right column: Quick Actions + Shortcuts
         let mut right_column_lines = vec![];
@@ -891,7 +899,7 @@ pub fn render_home_view(f: &mut Frame, area: Rect, home_state: &super::home_stat
 
         let right_column = Paragraph::new(right_column_lines)
             .alignment(Alignment::Left)
-            .style(Style::default().fg(Color::White));
+            .style(Style::default().fg(palette.text_primary));
 
         f.render_widget(sys_info, columns[0]);
         f.render_widget(right_column, columns[1]);
@@ -907,13 +915,13 @@ pub fn render_home_view(f: &mut Frame, area: Rect, home_state: &super::home_stat
         let single_column = Paragraph::new(all_lines)
             .alignment(Alignment::Center)
             .scroll((home_state.scroll_position, 0))
-            .style(Style::default().fg(Color::White));
+            .style(Style::default().fg(palette.text_primary));
 
         f.render_widget(single_column, main_chunks[1]);
     }
 }
 
-fn render_alert(f: &mut Frame, app: &mut App) {
+fn render_alert(f: &mut Frame, app: &mut App, palette: &ThemePalette) {
     // Create a centered overlay area for alert (60% width, auto height)
     let area = f.area();
     let overlay_width = (area.width as f32 * 0.6).min(80.0) as u16;
@@ -934,9 +942,9 @@ fn render_alert(f: &mut Frame, app: &mut App) {
 
     // Determine color based on alert type
     let (border_color, title_style) = match app.alert.alert_type {
-        AlertType::Success => (Color::Green, Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-        AlertType::Error => (Color::Red, Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-        AlertType::Info => (Color::Cyan, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        AlertType::Success => (palette.success, Style::default().fg(palette.success).add_modifier(Modifier::BOLD)),
+        AlertType::Error => (palette.error, Style::default().fg(palette.error).add_modifier(Modifier::BOLD)),
+        AlertType::Info => (palette.info, Style::default().fg(palette.info).add_modifier(Modifier::BOLD)),
     };
 
     let title = match app.alert.alert_type {
@@ -958,11 +966,11 @@ fn render_alert(f: &mut Frame, app: &mut App) {
     // Create message paragraph
     let message_lines = vec![
         Line::from(""),
-        Line::from(Span::styled(&app.alert.message, Style::default().fg(Color::White))),
+        Line::from(Span::styled(&app.alert.message, Style::default().fg(palette.text_primary))),
         Line::from(""),
         Line::from(Span::styled(
             "Press any key to close",
-            Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
+            Style::default().fg(palette.text_dim).add_modifier(Modifier::ITALIC),
         )),
     ];
 
@@ -972,4 +980,82 @@ fn render_alert(f: &mut Frame, app: &mut App) {
         .wrap(Wrap { trim: false });
 
     f.render_widget(paragraph, overlay_area);
+}
+
+/// Render theme selector modal
+pub fn render_theme_selector(f: &mut Frame, palette: &ThemePalette, selected_idx: usize) {
+    use super::theme::Theme;
+
+    // Create centered overlay (50% width, fixed height)
+    let area = f.area();
+    let modal_width = ((area.width as f32 * 0.5).min(60.0) as u16).max(40);
+    let modal_height = 15;
+
+    let modal_x = (area.width.saturating_sub(modal_width)) / 2;
+    let modal_y = (area.height.saturating_sub(modal_height)) / 2;
+
+    let modal_area = Rect {
+        x: modal_x,
+        y: modal_y,
+        width: modal_width,
+        height: modal_height,
+    };
+
+    // Clear background
+    f.render_widget(Clear, modal_area);
+
+    // Create block
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Theme Selector (Ctrl+T) ")
+        .style(Style::default().fg(palette.primary));
+
+    let inner = block.inner(modal_area);
+    f.render_widget(block, modal_area);
+
+    // Split into sections
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(2),  // Title
+            Constraint::Min(0),     // Theme list
+            Constraint::Length(3),  // Footer
+        ])
+        .split(inner);
+
+    // Title
+    let title = Paragraph::new("Select a theme:")
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(palette.text_primary));
+    f.render_widget(title, chunks[0]);
+
+    // Theme list
+    let themes = Theme::all();
+    let items: Vec<ListItem> = themes
+        .iter()
+        .enumerate()
+        .map(|(idx, theme)| {
+            let prefix = if idx == selected_idx { "► " } else { "  " };
+            let content = format!("{}{}", prefix, theme.name());
+            let style = if idx == selected_idx {
+                Style::default()
+                    .fg(palette.highlight)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(palette.text_primary)
+            };
+            ListItem::new(content).style(style)
+        })
+        .collect();
+
+    let list = List::new(items).style(Style::default());
+
+    f.render_widget(list, chunks[1]);
+
+    // Footer
+    let footer_text = "↑/↓: Navigate  |  Enter: Apply  |  ESC: Cancel";
+    let footer = Paragraph::new(footer_text)
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(palette.text_secondary));
+    f.render_widget(footer, chunks[2]);
 }

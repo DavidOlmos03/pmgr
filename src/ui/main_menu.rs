@@ -1,7 +1,9 @@
 use super::app::App;
 use super::home_state::{HomeState, SystemStats};
-use super::render::{render_home_view, render_tab_bar, ui_in_area};
+use super::render::{render_home_view, render_tab_bar, render_theme_selector, ui_in_area};
+use super::theme::Theme;
 use super::types::{ActionType, ViewType};
+use crate::config;
 use crate::package::PackageManager;
 use anyhow::Result;
 use crossterm::{
@@ -38,18 +40,26 @@ pub struct MainMenu {
     package_manager: PackageManager,
     // Cache to avoid reloading
     cached_installed: Option<Vec<String>>,
+    // Theme system
+    theme: Theme,
+    theme_selector_active: bool,
+    theme_selector_selected: usize,
 }
 
 impl MainMenu {
     pub fn new() -> Result<Self> {
         let package_manager = PackageManager::new();
         let home_state = HomeState::new();
+        let settings = config::load_settings();
 
         Ok(Self {
             current_view: ViewState::Home(home_state),
             selected_tab: ViewType::Home as usize,
             package_manager,
             cached_installed: None,
+            theme: settings.theme,
+            theme_selector_active: false,
+            theme_selector_selected: settings.theme as usize,
         })
     }
 
@@ -91,23 +101,31 @@ impl MainMenu {
                     ])
                     .split(f.area());
 
+                // Get theme palette
+                let palette = self.theme.palette();
+
                 // Render tab bar
-                render_tab_bar(f, chunks[0], self.selected_tab);
+                render_tab_bar(f, chunks[0], self.selected_tab, &palette);
 
                 // Render current view content
                 match &mut self.current_view {
                     ViewState::Home(home_state) => {
-                        render_home_view(f, chunks[1], home_state);
+                        render_home_view(f, chunks[1], home_state, &palette);
                     }
                     ViewState::Install(app) => {
-                        ui_in_area(f, app, "Select packages to install (TAB: multi-select, ENTER: confirm): ", chunks[1]);
+                        ui_in_area(f, app, "Select packages to install (TAB: multi-select, ENTER: confirm): ", chunks[1], &palette);
                     }
                     ViewState::Remove(app) => {
-                        ui_in_area(f, app, "Select packages to remove (TAB: multi-select, ENTER: confirm): ", chunks[1]);
+                        ui_in_area(f, app, "Select packages to remove (TAB: multi-select, ENTER: confirm): ", chunks[1], &palette);
                     }
                     ViewState::List(app) => {
-                        ui_in_area(f, app, "Browse installed packages (ESC to go back): ", chunks[1]);
+                        ui_in_area(f, app, "Browse installed packages (ESC to go back): ", chunks[1], &palette);
                     }
+                }
+
+                // Render theme selector on top if active
+                if self.theme_selector_active {
+                    render_theme_selector(f, &palette, self.theme_selector_selected);
                 }
             })?;
 
@@ -116,6 +134,15 @@ impl MainMenu {
                 if let Event::Key(key) = event::read()? {
                     // Handle global shortcuts first (work in any view)
                     let handled_globally = match (key.code, key.modifiers) {
+                        // Show theme selector with Ctrl+T
+                        (KeyCode::Char('t'), KeyModifiers::CONTROL) => {
+                            self.theme_selector_active = !self.theme_selector_active;
+                            if self.theme_selector_active {
+                                // Reset selection to current theme when opening
+                                self.theme_selector_selected = self.theme as usize;
+                            }
+                            true
+                        }
                         // Show help with '?'
                         (KeyCode::Char('?'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
                             if let ViewState::Install(app) | ViewState::Remove(app) | ViewState::List(app) = &mut self.current_view {
@@ -267,6 +294,44 @@ impl MainMenu {
                             app.alert.close();
                             continue;
                         }
+                    }
+
+                    // Theme selector is active
+                    if self.theme_selector_active {
+                        match (key.code, key.modifiers) {
+                            (KeyCode::Down, _) | (KeyCode::Char('j'), KeyModifiers::NONE) => {
+                                let num_themes = Theme::all().len();
+                                self.theme_selector_selected = (self.theme_selector_selected + 1) % num_themes;
+                            }
+                            (KeyCode::Up, _) | (KeyCode::Char('k'), KeyModifiers::NONE) => {
+                                let num_themes = Theme::all().len();
+                                self.theme_selector_selected = if self.theme_selector_selected == 0 {
+                                    num_themes - 1
+                                } else {
+                                    self.theme_selector_selected - 1
+                                };
+                            }
+                            (KeyCode::Enter, _) => {
+                                // Apply theme
+                                self.theme = Theme::all()[self.theme_selector_selected];
+
+                                // Save to config
+                                let settings = config::Settings {
+                                    theme: self.theme,
+                                };
+                                if let Err(e) = config::save_settings(&settings) {
+                                    // Could show error alert, but for now just ignore
+                                    eprintln!("Failed to save theme: {}", e);
+                                }
+
+                                self.theme_selector_active = false;
+                            }
+                            (KeyCode::Esc, _) => {
+                                self.theme_selector_active = false;
+                            }
+                            _ => {}
+                        }
+                        continue; // Don't process other keys when modal is active
                     }
 
                     // Handle view-specific events

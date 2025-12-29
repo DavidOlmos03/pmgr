@@ -1,5 +1,6 @@
 use super::app::App;
 use super::render::ui;
+use super::theme::Theme;
 use super::types::ActionType;
 use anyhow::Result;
 use crossterm::{
@@ -35,7 +36,9 @@ fn run_app<B: ratatui::backend::Backend>(
             app.update_window.clear_just_closed_flag();
         }
 
-        terminal.draw(|f| ui(f, &mut app, prompt))?;
+        // Use Default theme for standalone selector
+        let palette = Theme::Default.palette();
+        terminal.draw(|f| ui(f, &mut app, prompt, &palette))?;
 
         // Use poll with timeout to allow periodic UI updates
         if poll(Duration::from_millis(100))? {

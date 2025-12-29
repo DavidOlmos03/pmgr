@@ -21,6 +21,7 @@ SEARCH
 LAYOUT
   Alt+O              Switch to horizontal layout
   Alt+V              Switch to vertical layout
+  Ctrl+T             Change theme
 
 SYSTEM
   Ctrl+U             Update entire system (sudo pacman -Syu)
