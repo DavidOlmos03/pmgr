@@ -508,21 +508,23 @@ impl MainMenu {
                                 execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
                                 terminal.clear()?;
 
-                                // Show result alert
-                                if was_successful {
-                                    app.alert.show(super::types::AlertType::Success,
-                                        format!("✓ Successfully installed {} AUR package(s)", aur_packages.len()));
-                                } else if was_cancelled {
-                                    app.alert.show(super::types::AlertType::Info,
-                                        "⚠ AUR installation cancelled by user".to_string());
-                                } else {
-                                    app.alert.show(super::types::AlertType::Error,
-                                        "✗ AUR installation failed".to_string());
-                                }
-
-                                // Clear cache and refresh
+                                // Clear cache and refresh FIRST
                                 self.cached_installed = None;
                                 self.refresh_current_view()?;
+
+                                // Show result alert AFTER refresh (so it persists in the new App)
+                                if let ViewState::Install(app) | ViewState::Remove(app) | ViewState::List(app) = &mut self.current_view {
+                                    if was_successful {
+                                        app.alert.show(super::types::AlertType::Success,
+                                            format!("✓ Successfully installed {} AUR package(s)", aur_packages.len()));
+                                    } else if was_cancelled {
+                                        app.alert.show(super::types::AlertType::Info,
+                                            "⚠ AUR installation cancelled by user".to_string());
+                                    } else {
+                                        app.alert.show(super::types::AlertType::Error,
+                                            "✗ AUR installation failed".to_string());
+                                    }
+                                }
                             }
                         }
                         ActionType::Remove => {
