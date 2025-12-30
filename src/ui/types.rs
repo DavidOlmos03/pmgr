@@ -31,6 +31,8 @@ pub struct SystemUpdateWindow {
     pub just_closed: bool, // Flag to indicate we need to redraw
     pub title: String, // Window title
     pub cancelled_by_user: bool, // True if user manually closed with Alt+X
+    pub operation_type: Option<String>, // Type of operation (for showing correct alert)
+    pub was_successful: bool, // True if operation completed successfully
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

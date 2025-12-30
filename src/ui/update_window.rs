@@ -15,6 +15,8 @@ impl SystemUpdateWindow {
             just_closed: false,
             title: String::new(),
             cancelled_by_user: false,
+            operation_type: None,
+            was_successful: false,
         }
     }
 
@@ -104,6 +106,7 @@ impl SystemUpdateWindow {
     }
 
     pub fn start_update(&mut self) {
+        self.operation_type = Some("system_update".to_string());
         self.start_command(
             "pkexec".to_string(),
             vec!["pacman".to_string(), "-Syu".to_string(), "--noconfirm".to_string()],
@@ -114,6 +117,8 @@ impl SystemUpdateWindow {
     }
 
     pub fn start_install_official(&mut self, packages: &[String]) {
+        self.operation_type = Some(format!("install_official_{}", packages.len()));
+
         // Extract package names from "repository/package" format
         let package_names: Vec<String> = packages
             .iter()
@@ -173,6 +178,8 @@ impl SystemUpdateWindow {
     }
 
     pub fn start_remove(&mut self, packages: &[String]) {
+        self.operation_type = Some(format!("remove_{}", packages.len()));
+
         // Extract package names from "repository/package" format
         let package_names: Vec<String> = packages
             .iter()
@@ -218,6 +225,9 @@ impl SystemUpdateWindow {
     }
 
     pub fn close(&mut self, cancelled_by_user: bool) {
+        // Capture success state before clearing
+        self.was_successful = self.completed && !self.has_error;
+
         self.active = false;
         self.output.clear();
         self.completed = false;
@@ -225,10 +235,13 @@ impl SystemUpdateWindow {
         self.rx = None;
         self.just_closed = true;
         self.cancelled_by_user = cancelled_by_user;
+        // Keep operation_type and was_successful for showing alert
     }
 
     pub fn clear_just_closed_flag(&mut self) {
         self.just_closed = false;
         self.cancelled_by_user = false;
+        self.operation_type = None;
+        self.was_successful = false;
     }
 }

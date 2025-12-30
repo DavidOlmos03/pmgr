@@ -179,9 +179,23 @@ impl MainMenu {
                             if app.update_window.just_closed {
                                 terminal.clear()?;
 
-                                // Show alert if cancelled by user
+                                // Show appropriate alert based on operation result
                                 if app.update_window.cancelled_by_user {
                                     app.alert.show(super::types::AlertType::Info, "⚠ Operation cancelled by user".to_string());
+                                } else if app.update_window.was_successful {
+                                    // Show success message based on operation type
+                                    let message = if let Some(ref op_type) = app.update_window.operation_type {
+                                        if op_type == "system_update" {
+                                            "✓ System updated successfully".to_string()
+                                        } else {
+                                            "✓ Operation completed successfully".to_string()
+                                        }
+                                    } else {
+                                        "✓ Operation completed successfully".to_string()
+                                    };
+                                    app.alert.show(super::types::AlertType::Success, message);
+                                } else if let Some(_) = app.update_window.operation_type {
+                                    app.alert.show(super::types::AlertType::Error, "✗ Operation failed".to_string());
                                 }
 
                                 app.update_window.clear_just_closed_flag();
@@ -535,22 +549,10 @@ impl MainMenu {
                 }
             }
 
-            // Check if update_window just completed successfully
-            if let ViewState::Install(app) | ViewState::Remove(app) | ViewState::List(app) = &mut self.current_view {
-                // If window was just closed after successful operation, refresh the view
-                if app.update_window.just_closed {
-                    // Clear cache to force refresh
-                    self.cached_installed = None;
-                    // Refresh will happen in the next iteration
-                    let should_refresh = true;
-                    if should_refresh {
-                        self.refresh_current_view()?;
-                    }
-                }
-            }
-
             // Always check for updates (even without key events)
             let mut need_view_refresh = false;
+            let mut pending_alert: Option<(super::types::AlertType, String)> = None;
+
             if let ViewState::Install(app) | ViewState::Remove(app) | ViewState::List(app) = &mut self.current_view {
                 // Check for preview updates (so previews load automatically)
                 app.check_preview_updates();
@@ -568,9 +570,30 @@ impl MainMenu {
                 if app.update_window.just_closed {
                     terminal.clear()?;
 
-                    // Show alert if cancelled by user
+                    // Prepare alert based on operation result (will show after refresh)
                     if app.update_window.cancelled_by_user {
-                        app.alert.show(super::types::AlertType::Info, "⚠ Operation cancelled by user".to_string());
+                        pending_alert = Some((super::types::AlertType::Info, "⚠ Operation cancelled by user".to_string()));
+                    } else if app.update_window.was_successful {
+                        // Show success message based on operation type
+                        let message = if let Some(ref op_type) = app.update_window.operation_type {
+                            if op_type.starts_with("remove_") {
+                                let count = op_type.strip_prefix("remove_").unwrap_or("0");
+                                format!("✓ Successfully removed {} package(s)", count)
+                            } else if op_type.starts_with("install_official_") {
+                                let count = op_type.strip_prefix("install_official_").unwrap_or("0");
+                                format!("✓ Successfully installed {} official package(s)", count)
+                            } else if op_type == "system_update" {
+                                "✓ System updated successfully".to_string()
+                            } else {
+                                "✓ Operation completed successfully".to_string()
+                            }
+                        } else {
+                            "✓ Operation completed successfully".to_string()
+                        };
+                        pending_alert = Some((super::types::AlertType::Success, message));
+                    } else if let Some(_) = app.update_window.operation_type {
+                        // Operation failed (not cancelled, not successful)
+                        pending_alert = Some((super::types::AlertType::Error, "✗ Operation failed".to_string()));
                     }
 
                     app.update_window.clear_just_closed_flag();
@@ -579,7 +602,15 @@ impl MainMenu {
 
             // Refresh view if needed (after window closes)
             if need_view_refresh {
+                self.cached_installed = None;
                 self.refresh_current_view()?;
+            }
+
+            // Show pending alert AFTER refresh (so it persists in the new App)
+            if let Some((alert_type, message)) = pending_alert {
+                if let ViewState::Install(app) | ViewState::Remove(app) | ViewState::List(app) = &mut self.current_view {
+                    app.alert.show(alert_type, message);
+                }
             }
         }
     }
