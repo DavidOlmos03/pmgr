@@ -435,6 +435,15 @@ impl MainMenu {
                                     .collect();
 
                                 // Run yay with full control (handoff)
+                                // Ignore SIGINT (Ctrl+C) temporarily so yay can handle it
+                                use signal_hook::consts::SIGINT;
+                                use signal_hook::flag;
+                                use std::sync::Arc;
+                                use std::sync::atomic::AtomicBool;
+
+                                let term = Arc::new(AtomicBool::new(false));
+                                let _guard = flag::register(SIGINT, Arc::clone(&term));
+
                                 let result = std::process::Command::new("yay")
                                     .arg("-S")
                                     .args(&pkg_names)
@@ -443,25 +452,72 @@ impl MainMenu {
                                     .stderr(std::process::Stdio::inherit())
                                     .status();
 
-                                println!("\nPress Enter to return to pmgr...");
-                                let mut input = String::new();
-                                let _ = io::stdin().read_line(&mut input);
+                                // Guard drops here, restoring normal SIGINT handling
+
+                                // Flush and add spacing
+                                use std::io::Write;
+                                let _ = io::stdout().flush();
+                                let _ = io::stderr().flush();
+
+                                // Determine if operation was successful or cancelled
+                                let (was_successful, was_cancelled) = match &result {
+                                    Ok(status) => {
+                                        let success = status.success();
+                                        // Exit code 130 = SIGINT (Ctrl+C)
+                                        // Also check for other interrupt codes
+                                        let code = status.code().unwrap_or(1);
+                                        let cancelled = code == 130 || code == 2;
+                                        (success, cancelled)
+                                    }
+                                    Err(e) => {
+                                        // Check if error is due to interrupt
+                                        let cancelled = e.kind() == std::io::ErrorKind::Interrupted;
+                                        (false, cancelled)
+                                    }
+                                };
+
+                                println!("\n{}", "=".repeat(60));
+
+                                if was_successful {
+                                    // Success - wait for user to see the result
+                                    println!("✓ Installation completed successfully!");
+                                    println!("{}", "=".repeat(60));
+                                    println!("\nPress Enter to return to pmgr...");
+                                    let _ = io::stdout().flush();
+                                    let mut input = String::new();
+                                    let _ = io::stdin().read_line(&mut input);
+                                } else if was_cancelled {
+                                    // Cancelled - return automatically after short delay
+                                    println!("⚠ Installation cancelled by user");
+                                    println!("{}", "=".repeat(60));
+                                    println!("\nReturning to pmgr in 3 seconds...");
+                                    let _ = io::stdout().flush();
+                                    std::thread::sleep(Duration::from_secs(3));
+                                } else {
+                                    // Failed - give user a moment to see error
+                                    println!("✗ Installation failed");
+                                    println!("{}", "=".repeat(60));
+                                    println!("\nPress Enter to return to pmgr...");
+                                    let _ = io::stdout().flush();
+                                    let mut input = String::new();
+                                    let _ = io::stdin().read_line(&mut input);
+                                }
 
                                 // Re-enter TUI
                                 enable_raw_mode()?;
                                 execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
                                 terminal.clear()?;
 
-                                // Show result
-                                match result {
-                                    Ok(status) if status.success() => {
-                                        app.alert.show(super::types::AlertType::Success,
-                                            format!("✓ Successfully installed {} AUR package(s)", aur_packages.len()));
-                                    }
-                                    _ => {
-                                        app.alert.show(super::types::AlertType::Error,
-                                            "✗ AUR installation failed or was cancelled".to_string());
-                                    }
+                                // Show result alert
+                                if was_successful {
+                                    app.alert.show(super::types::AlertType::Success,
+                                        format!("✓ Successfully installed {} AUR package(s)", aur_packages.len()));
+                                } else if was_cancelled {
+                                    app.alert.show(super::types::AlertType::Info,
+                                        "⚠ AUR installation cancelled by user".to_string());
+                                } else {
+                                    app.alert.show(super::types::AlertType::Error,
+                                        "✗ AUR installation failed".to_string());
                                 }
 
                                 // Clear cache and refresh

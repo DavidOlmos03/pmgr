@@ -16,6 +16,7 @@ ratatui = "0.29"
 crossterm = "0.28"
 fuzzy-matcher = "0.3"
 dirs = "5.0"
+signal-hook = "0.3"
 
 [profile.release]
 opt-level = 3
