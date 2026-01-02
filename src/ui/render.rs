@@ -740,9 +740,9 @@ pub fn render_home_view(f: &mut Frame, area: Rect, home_state: &super::home_stat
 
     // Determine number of columns based on width
     let width = inner_area.width;
-    let num_columns = if width >= 120 {
+    let num_columns = if width >= 100 {
         3 // 3 columns for wide screens
-    } else if width >= 80 {
+    } else if width >= 70 {
         2 // 2 columns for medium screens
     } else {
         1 // 1 column for narrow screens
@@ -886,7 +886,7 @@ pub fn render_home_view(f: &mut Frame, area: Rect, home_state: &super::home_stat
         f.render_widget(quick_actions, columns[1]);
         f.render_widget(shortcuts, columns[2]);
     } else if num_columns == 2 {
-        // 2 columns layout
+        // 2 columns layout - better distribution
         let columns = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
@@ -895,22 +895,23 @@ pub fn render_home_view(f: &mut Frame, area: Rect, home_state: &super::home_stat
             ])
             .split(main_chunks[1]);
 
-        // Left column: System Info
-        let sys_info = Paragraph::new(sys_info_lines)
-            .alignment(Alignment::Left)
+        // Left column: System Info + Quick Actions
+        let mut left_column_lines = vec![];
+        left_column_lines.extend(sys_info_lines);
+        left_column_lines.push(Line::from(""));
+        left_column_lines.push(Line::from(""));
+        left_column_lines.extend(quick_actions_lines);
+
+        let left_column = Paragraph::new(left_column_lines)
+            .alignment(Alignment::Center)
             .style(Style::default().fg(palette.text_primary));
 
-        // Right column: Quick Actions + Shortcuts
-        let mut right_column_lines = vec![];
-        right_column_lines.extend(quick_actions_lines);
-        right_column_lines.push(Line::from(""));
-        right_column_lines.extend(shortcuts_lines);
-
-        let right_column = Paragraph::new(right_column_lines)
-            .alignment(Alignment::Left)
+        // Right column: Keyboard Shortcuts
+        let right_column = Paragraph::new(shortcuts_lines)
+            .alignment(Alignment::Center)
             .style(Style::default().fg(palette.text_primary));
 
-        f.render_widget(sys_info, columns[0]);
+        f.render_widget(left_column, columns[0]);
         f.render_widget(right_column, columns[1]);
     } else {
         // 1 column layout
