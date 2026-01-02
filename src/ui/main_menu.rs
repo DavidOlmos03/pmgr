@@ -1,6 +1,7 @@
 use super::app::App;
 use super::home_state::{HomeState, SystemStats};
-use super::render::{render_home_view, render_tab_bar, render_theme_selector, ui_in_area};
+use super::render::{render_home_view, render_loading_spinner, render_tab_bar, render_theme_selector, ui_in_area};
+use super::spinner::LoadingState;
 use super::theme::Theme;
 use super::types::{ActionType, ViewType};
 use crate::config;
@@ -24,6 +25,15 @@ enum Action {
     RefreshHomeStats,
 }
 
+/// Pending data load state
+enum PendingLoad {
+    None,
+    Home,
+    Install,
+    Remove,
+    List,
+}
+
 /// Enum to represent different view states in the main menu
 pub enum ViewState {
     Home(HomeState),
@@ -43,6 +53,9 @@ pub struct MainMenu {
     theme: Theme,
     theme_selector_active: bool,
     theme_selector_selected: usize,
+    // Loading state
+    loading_state: LoadingState,
+    pending_load: PendingLoad,
 }
 
 impl MainMenu {
@@ -59,6 +72,8 @@ impl MainMenu {
             theme: settings.theme,
             theme_selector_active: false,
             theme_selector_selected: settings.theme as usize,
+            loading_state: LoadingState::new(),
+            pending_load: PendingLoad::Home, // Load home stats on start
         })
     }
 
@@ -90,7 +105,10 @@ impl MainMenu {
     /// Main event loop
     fn run_loop<B: ratatui::backend::Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()> {
         loop {
-            // Render current view
+            // Update spinner animation
+            self.loading_state.tick();
+
+            // Render current view FIRST (so spinner is visible)
             terminal.draw(|f| {
                 let chunks = Layout::default()
                     .direction(Direction::Vertical)
@@ -126,7 +144,35 @@ impl MainMenu {
                 if self.theme_selector_active {
                     render_theme_selector(f, &palette, self.theme_selector_selected);
                 }
+
+                // Render loading spinner overlay if active
+                if self.loading_state.is_active() {
+                    render_loading_spinner(f, &self.loading_state, &palette);
+                }
             })?;
+
+            // Handle pending loads AFTER rendering (so spinner is visible during load)
+            if !matches!(self.pending_load, PendingLoad::None) {
+                let load_type = std::mem::replace(&mut self.pending_load, PendingLoad::None);
+
+                match load_type {
+                    PendingLoad::Home => {
+                        self.perform_home_load()?;
+                    }
+                    PendingLoad::Install => {
+                        self.perform_install_load()?;
+                    }
+                    PendingLoad::Remove => {
+                        self.perform_remove_load()?;
+                    }
+                    PendingLoad::List => {
+                        self.perform_list_load()?;
+                    }
+                    PendingLoad::None => {}
+                }
+                // After load completes, continue to next iteration to render the data
+                continue;
+            }
 
             // Handle events with polling
             if poll(Duration::from_millis(100))? {
@@ -619,54 +665,53 @@ impl MainMenu {
     fn switch_to_view(&mut self, view_type: ViewType) -> Result<()> {
         self.selected_tab = view_type as usize;
 
-        self.current_view = match view_type {
+        // Set loading state and pending load
+        match view_type {
             ViewType::Home => {
-                let mut home_state = HomeState::new();
-                self.load_home_stats_into(&mut home_state)?;
-                ViewState::Home(home_state)
+                self.loading_state.start("Loading system information".to_string());
+                self.current_view = ViewState::Home(HomeState::new());
+                self.pending_load = PendingLoad::Home;
             }
             ViewType::Install => {
-                let packages = self.get_or_load_available()?;
-                let package_names: Vec<String> = packages
-                    .iter()
-                    .map(|p| format!("{}/{}", p.repository, p.name))
-                    .collect();
-
-                let app = App::new(
-                    package_names,
-                    true, // multi-select
+                self.loading_state.start("Loading available packages".to_string());
+                // Create empty app temporarily
+                self.current_view = ViewState::Install(App::new(
+                    vec![],
+                    true,
                     Some("echo {} | xargs yay -Si".to_string()),
                     ActionType::Install,
-                );
-                ViewState::Install(app)
+                ));
+                self.pending_load = PendingLoad::Install;
             }
             ViewType::Remove => {
-                let packages = self.get_or_load_installed()?;
-                let app = App::new(
-                    packages,
-                    true, // multi-select
+                self.loading_state.start("Loading installed packages".to_string());
+                self.current_view = ViewState::Remove(App::new(
+                    vec![],
+                    true,
                     Some("echo {} | xargs yay -Qi".to_string()),
                     ActionType::Remove,
-                );
-                ViewState::Remove(app)
+                ));
+                self.pending_load = PendingLoad::Remove;
             }
             ViewType::List => {
-                let packages = self.get_or_load_installed()?;
-                let app = App::new(
-                    packages,
-                    false, // single-select (browse mode)
+                self.loading_state.start("Loading installed packages".to_string());
+                self.current_view = ViewState::List(App::new(
+                    vec![],
+                    false,
                     Some("echo {} | xargs yay -Qi".to_string()),
-                    ActionType::Install, // Default action type
-                );
-                ViewState::List(app)
+                    ActionType::Install,
+                ));
+                self.pending_load = PendingLoad::List;
             }
-        };
+        }
 
         Ok(())
     }
 
     /// Load home view statistics
     fn load_home_stats(&mut self) -> Result<()> {
+        self.loading_state.start("Refreshing system information".to_string());
+
         // Load stats data
         let installed = self.package_manager.list_installed()?;
         let available = self.package_manager.list_available()?;
@@ -685,6 +730,7 @@ impl MainMenu {
             home_state.set_stats(stats);
         }
 
+        self.loading_state.stop();
         Ok(())
     }
 
@@ -739,6 +785,73 @@ impl MainMenu {
             }
             _ => {}
         }
+        Ok(())
+    }
+
+    /// Perform the actual home data load
+    fn perform_home_load(&mut self) -> Result<()> {
+        if let ViewState::Home(home_state) = &mut self.current_view {
+            let installed = self.package_manager.list_installed()?;
+            let available = self.package_manager.list_available()?;
+            let updates_available = 0; // TODO: Implement
+
+            home_state.set_stats(SystemStats {
+                installed_count: installed.len(),
+                available_count: available.len(),
+                updates_available,
+            });
+        }
+        self.loading_state.stop();
+        Ok(())
+    }
+
+    /// Perform the actual install view data load
+    fn perform_install_load(&mut self) -> Result<()> {
+        let packages = self.get_or_load_available()?;
+        let package_names: Vec<String> = packages
+            .iter()
+            .map(|p| format!("{}/{}", p.repository, p.name))
+            .collect();
+
+        let app = App::new(
+            package_names,
+            true,
+            Some("echo {} | xargs yay -Si".to_string()),
+            ActionType::Install,
+        );
+
+        self.current_view = ViewState::Install(app);
+        self.loading_state.stop();
+        Ok(())
+    }
+
+    /// Perform the actual remove view data load
+    fn perform_remove_load(&mut self) -> Result<()> {
+        let packages = self.get_or_load_installed()?;
+        let app = App::new(
+            packages,
+            true,
+            Some("echo {} | xargs yay -Qi".to_string()),
+            ActionType::Remove,
+        );
+
+        self.current_view = ViewState::Remove(app);
+        self.loading_state.stop();
+        Ok(())
+    }
+
+    /// Perform the actual list view data load
+    fn perform_list_load(&mut self) -> Result<()> {
+        let packages = self.get_or_load_installed()?;
+        let app = App::new(
+            packages,
+            false,
+            Some("echo {} | xargs yay -Qi".to_string()),
+            ActionType::Install,
+        );
+
+        self.current_view = ViewState::List(app);
+        self.loading_state.stop();
         Ok(())
     }
 }

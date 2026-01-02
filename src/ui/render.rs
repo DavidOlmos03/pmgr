@@ -1,9 +1,10 @@
 use super::app::App;
+use super::spinner::LoadingState;
 use super::theme::ThemePalette;
 use super::types::{ActionType, AlertType, PreviewLayout};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style, Stylize},
+    style::{Modifier, Style, Stylize},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
     Frame,
@@ -1068,4 +1069,65 @@ pub fn render_theme_selector(f: &mut Frame, palette: &ThemePalette, selected_idx
         .alignment(Alignment::Center)
         .style(Style::default().fg(palette.text_secondary));
     f.render_widget(footer, chunks[2]);
+}
+
+/// Render loading spinner overlay
+pub fn render_loading_spinner(f: &mut Frame, loading_state: &LoadingState, palette: &ThemePalette) {
+    // Create centered overlay (50% width, 10 lines height)
+    let area = f.area();
+    let overlay_width = (area.width as f32 * 0.5).min(60.0) as u16;
+    let overlay_height = 10;
+
+    let overlay_x = (area.width.saturating_sub(overlay_width)) / 2;
+    let overlay_y = (area.height.saturating_sub(overlay_height)) / 2;
+
+    let overlay_area = Rect {
+        x: overlay_x,
+        y: overlay_y,
+        width: overlay_width,
+        height: overlay_height,
+    };
+
+    // Clear background
+    f.render_widget(Clear, overlay_area);
+
+    // Create block
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Loading ")
+        .style(Style::default().fg(palette.primary));
+
+    let inner = block.inner(overlay_area);
+    f.render_widget(block, overlay_area);
+
+    // Create loading content
+    let spinner_text = format!("{} {}", loading_state.spinner.current(), loading_state.message);
+
+    let lines = vec![
+        Line::from(""),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(
+                spinner_text,
+                Style::default()
+                    .fg(palette.primary)
+                    .add_modifier(Modifier::BOLD)
+            )
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(
+                "Please wait...",
+                Style::default()
+                    .fg(palette.text_secondary)
+                    .add_modifier(Modifier::ITALIC)
+            )
+        ]),
+    ];
+
+    let paragraph = Paragraph::new(lines)
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(palette.text_primary));
+
+    f.render_widget(paragraph, inner);
 }
